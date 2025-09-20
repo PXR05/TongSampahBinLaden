@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ESP32 History</title>
+    <style>
+      body {
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial,
+          sans-serif;
+        margin: 0;
+        padding: 20px;
+        background: #f6f8fa;
+        color: #24292e;
+      }
+      .card {
+        background: #fff;
+        border: 1px solid #d0d7de;
+        border-radius: 8px;
+        padding: 16px;
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0 0 12px;
+      }
+      .row {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+      select,
+      input[type="number"] {
+        padding: 6px 8px;
+        border: 1px solid #d0d7de;
+        border-radius: 6px;
+      }
+      .btn {
+        appearance: none;
+        border: 1px solid #d0d7de;
+        background: #fff;
+        color: #24292e;
+        padding: 6px 10px;
+        border-radius: 6px;
+        font-size: 13px;
+        line-height: 1;
+        cursor: pointer;
+      }
+      .btn:hover {
+        background: #f6f8fa;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+      th,
+      td {
+        padding: 8px;
+        border-bottom: 1px solid #e5e7eb;
+        text-align: left;
+        font-size: 13px;
+      }
+      th {
+        background: #f9fafb;
+        position: sticky;
+        top: 0;
+      }
+      .muted {
+        color: #57606a;
+        font-size: 12px;
+        margin-top: 8px;
+      }
+      .pagination {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 12px;
+      }
+      .page-controls {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .spacer {
+        flex: 1;
+      }
+      a {
+        color: #2563eb;
+        text-decoration: none;
+      }
+      a:hover {
+        text-decoration: underline;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="row">
+        <h1 style="margin-right: auto">ESP32 History</h1>
+        <a href="/" class="btn" title="Back to dashboard">← Dashboard</a>
+      </div>
+      <div class="row">
+        <label for="deviceSelect">Device:</label>
+        <select id="deviceSelect">
+          <option value="">Loading…</option>
+        </select>
+        <label for="pageSize">Page size:</label>
+        <input
+          id="pageSize"
+          type="number"
+          value="25"
+          min="5"
+          max="200"
+          step="5"
+        />
+        <button id="applyBtn" class="btn">Apply</button>
+      </div>
+
+      <div class="muted" id="statusText">Loading…</div>
+
+      <div
+        id="tableScroll"
+        style="
+          overflow: auto;
+          max-height: 70vh;
+          border: 1px solid #e5e7eb;
+          border-radius: 8px;
+        "
+      >
+        <table id="historyTable">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Device</th>
+              <th>Distance (cm)</th>
+              <th>Motion</th>
+              <th>Servo (°)</th>
+              <th>Target (°)</th>
+              <th>Uptime (ms)</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="pagination">
+        <div class="page-controls">
+          <button id="firstBtn" class="btn">« First</button>
+          <button id="prevBtn" class="btn">‹ Prev</button>
+          <span id="pageInfo" class="muted">Page 1 of 1</span>
+          <button id="nextBtn" class="btn">Next ›</button>
+          <button id="lastBtn" class="btn">Last »</button>
+        </div>
+        <div class="spacer"></div>
+        <div class="muted" id="totalInfo">0 rows</div>
+      </div>
+    </div>
+
+    <script>
+      let state = { deviceId: "", page: 1, pageSize: 25, totalPages: 1 };
+      let refreshHandle = null;
+      const REFRESH_MS = 2000;
+
+      document.addEventListener("DOMContentLoaded", async () => {
+        const params = new URLSearchParams(location.search);
+        const qDevice = params.get("deviceId");
+        const qPage = parseInt(params.get("page") || "1", 10);
+        const qPageSize = parseInt(params.get("pageSize") || "25", 10);
+        if (!Number.isNaN(qPage)) state.page = Math.max(1, qPage);
+        if (!Number.isNaN(qPageSize))
+          state.pageSize = Math.min(200, Math.max(5, qPageSize));
+
+        await loadDevices(qDevice);
+        await loadPage();
+
+        document
+          .getElementById("prevBtn")
+          .addEventListener("click", () => gotoPage(state.page - 1));
+        document
+          .getElementById("nextBtn")
+          .addEventListener("click", () => gotoPage(state.page + 1));
+        document
+          .getElementById("firstBtn")
+          .addEventListener("click", () => gotoPage(1));
+        document
+          .getElementById("lastBtn")
+          .addEventListener("click", () => gotoPage(state.totalPages));
+        document.getElementById("applyBtn").addEventListener("click", () => {
+          const ps = parseInt(document.getElementById("pageSize").value, 10);
+          state.pageSize = Math.min(200, Math.max(5, isNaN(ps) ? 25 : ps));
+          state.page = 1;
+          syncUrl();
+          loadPage();
+        });
+        document
+          .getElementById("deviceSelect")
+          .addEventListener("change", (e) => {
+            state.deviceId = e.target.value;
+            state.page = 1;
+            syncUrl();
+            loadPage();
+          });
+
+        startAutoRefresh();
+        document.addEventListener("visibilitychange", handleVisibility);
+        window.addEventListener("beforeunload", stopAutoRefresh);
+      });
+
+      async function loadDevices(preselect) {
+        try {
+          const res = await fetch("/api/devices");
+          const j = await res.json();
+          const ids = j.deviceIds || [];
+          const sel = document.getElementById("deviceSelect");
+          sel.innerHTML =
+            '<option value="">Select…</option>' +
+            ids.map((id) => `<option value="${id}">${id}</option>`).join("");
+          if (preselect && ids.includes(preselect)) {
+            state.deviceId = preselect;
+            sel.value = preselect;
+          } else if (!state.deviceId && ids.length) {
+            state.deviceId = ids[0];
+            sel.value = state.deviceId;
+          }
+        } catch (e) {
+          console.error("loadDevices", e);
+        }
+      }
+
+      async function loadPage(silent = false) {
+        if (!state.deviceId) {
+          document.getElementById("statusText").textContent = "Select a device";
+          return;
+        }
+        try {
+          if (!silent)
+            document.getElementById("statusText").textContent = "Loading…";
+          const url = `/api/history-page?deviceId=${encodeURIComponent(
+            state.deviceId
+          )}&page=${state.page}&pageSize=${state.pageSize}`;
+          const res = await fetch(url);
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          const j = await res.json();
+          state.totalPages = j.totalPages || 1;
+          state.page = j.page || 1;
+          document.getElementById(
+            "pageInfo"
+          ).textContent = `Page ${state.page} of ${state.totalPages}`;
+          document.getElementById("totalInfo").textContent = `${
+            j.total || 0
+          } rows total`;
+          document.getElementById("pageSize").value = state.pageSize;
+          renderRows(j.rows || []);
+          if (!silent)
+            document.getElementById("statusText").textContent = "Loaded";
+          updateButtons();
+        } catch (e) {
+          console.error("loadPage", e);
+          document.getElementById("statusText").textContent =
+            "Failed to load page";
+        }
+      }
+
+      function renderRows(rows) {
+        const sc = document.getElementById("tableScroll");
+        const saved = sc ? sc.scrollTop : 0;
+        const tb = document.querySelector("#historyTable tbody");
+        tb.innerHTML = rows
+          .map(
+            (r) => `
+          <tr>
+            <td>${
+              r.serverTimestamp
+                ? new Date(r.serverTimestamp).toLocaleString()
+                : ""
+            }</td>
+            <td>${r.deviceId || ""}</td>
+            <td>${r.distance ?? ""}</td>
+            <td>${r.motion ? "Detected" : "None"}</td>
+            <td>${r.servoPosition ?? ""}</td>
+            <td>${r.targetPosition ?? ""}</td>
+            <td>${r.deviceUptimeMs ?? ""}</td>
+          </tr>
+        `
+          )
+          .join("");
+        if (sc) sc.scrollTop = saved;
+      }
+
+      function updateButtons() {
+        document.getElementById("prevBtn").disabled = state.page <= 1;
+        document.getElementById("firstBtn").disabled = state.page <= 1;
+        document.getElementById("nextBtn").disabled =
+          state.page >= state.totalPages;
+        document.getElementById("lastBtn").disabled =
+          state.page >= state.totalPages;
+      }
+
+      function gotoPage(p) {
+        const np = Math.max(1, Math.min(state.totalPages || 1, p));
+        if (np === state.page) return;
+        state.page = np;
+        syncUrl();
+        loadPage();
+      }
+
+      function syncUrl() {
+        const params = new URLSearchParams();
+        if (state.deviceId) params.set("deviceId", state.deviceId);
+        params.set("page", String(state.page));
+        params.set("pageSize", String(state.pageSize));
+        history.replaceState(
+          null,
+          "",
+          `${location.pathname}?${params.toString()}`
+        );
+      }
+
+      function startAutoRefresh() {
+        if (document.hidden) return;
+        stopAutoRefresh();
+        refreshHandle = setInterval(() => loadPage(true), REFRESH_MS);
+      }
+
+      function stopAutoRefresh() {
+        if (refreshHandle) {
+          clearInterval(refreshHandle);
+          refreshHandle = null;
+        }
+      }
+
+      function handleVisibility() {
+        if (document.hidden) stopAutoRefresh();
+        else startAutoRefresh();
+      }
+    </script>
+  </body>
+</html>
