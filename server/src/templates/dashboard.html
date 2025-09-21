@@ -4,161 +4,17 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>ESP32 Dashboard</title>
-    <style>
-      :root {
-        --bg: #f6f8fa;
-        --card-bg: #fff;
-        --border: #d0d7de;
-        --muted: #57606a;
-        --text: #24292e;
-        --accent: #2563eb;
-      }
-      body {
-        font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial,
-          sans-serif;
-        margin: 0;
-        padding: 20px;
-        background: var(--bg);
-        color: var(--text);
-      }
-      .card {
-        background: var(--card-bg);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        padding: 16px;
-        max-width: 800px;
-        margin: 0 auto;
-      }
-      h1 {
-        font-size: 20px;
-        margin: 0 0 12px;
-      }
-      .row {
-        display: flex;
-        gap: 12px;
-        flex-wrap: wrap;
-        margin: 8px 0 16px;
-      }
-      select {
-        padding: 6px 8px;
-        border: 1px solid #d0d7de;
-        border-radius: 6px;
-      }
-      .grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-        gap: 8px;
-      }
-      .controls {
-        padding: 12px;
-        border: 1px solid #e5e7eb;
-        border-radius: 12px;
-        background: #f9fafb;
-      }
-      .controls-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-        gap: 12px;
-      }
-      .control-group {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        min-height: 48px;
-        height: 100%;
-      }
-      .control-title {
-        font-size: 12px;
-        color: var(--muted);
-      }
-      .control-row {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        flex-wrap: wrap;
-        height: 100%;
-      }
-      .btn {
-        flex: 1;
-        height: 100%;
-        appearance: none;
-        border: 1px solid var(--border);
-        background: #fff;
-        color: var(--text);
-        padding: 8px 12px;
-        border-radius: 8px;
-        font-size: 13px;
-        line-height: 1;
-        cursor: pointer;
-        transition: background 0.15s ease, border-color 0.15s ease,
-          box-shadow 0.15s ease;
-      }
-      .btn:hover {
-        background: #f6f8fa;
-        border-color: #c5ced8;
-        box-shadow: 0 1px 0 rgba(27, 31, 36, 0.04);
-      }
-      .btn:active {
-        background: #eef2f7;
-      }
-      .slider-group {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-      }
-      input[type="range"]#angleSlider {
-        width: 180px;
-      }
-      input[type="number"]#thresholdInput {
-        width: 90px;
-      }
-      .sep {
-        width: 1px;
-        height: 20px;
-        background: #e5e7eb;
-        margin: 0 4px;
-      }
-      #angleValue {
-        font-variant-numeric: tabular-nums;
-        font-size: 12px;
-        color: #57606a;
-        border: 1px solid #e5e7eb;
-        background: #fff;
-        padding: 2px 6px;
-        border-radius: 999px;
-      }
-      .stat {
-        border: 1px solid #d0d7de;
-        border-radius: 6px;
-        padding: 10px;
-      }
-      .stat .label {
-        font-size: 12px;
-        color: #57606a;
-      }
-      .stat .value {
-        font-size: 18px;
-        margin-top: 4px;
-      }
-      .muted {
-        color: #57606a;
-        font-size: 12px;
-        margin-top: 8px;
-      }
-    </style>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <link rel="stylesheet" href="/static/style.css" />
   </head>
   <body>
-    <div class="card">
+    <div class="card card--narrow">
       <h1>ESP32 Dashboard</h1>
       <div class="row">
         <label for="deviceSelect">Device:</label
         ><select id="deviceSelect">
           <option value="">Select...</option>
         </select>
-        <div class="muted" id="lastUpdateSmall" style="margin-left: auto">
-          Last update: --
-        </div>
+        <div class="muted ml-auto" id="lastUpdateSmall">Last update: --</div>
       </div>
       <div class="controls" id="controlsRow">
         <div class="controls-grid">
@@ -217,7 +73,7 @@
           </div>
         </div>
       </div>
-      <div class="grid row">
+      <div class="grid row mt16">
         <div class="stat">
           <div class="label">Distance</div>
           <div class="value" id="distance">-- cm</div>
@@ -235,85 +91,68 @@
           <div class="value" id="fullStatus">--</div>
         </div>
       </div>
-      <div style="margin-top: 16px">
-        <div
-          style="
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 4px;
-          "
-        >
+      <div class="mt16">
+        <div class="sectionHeader">
           <div class="muted">Distance (last)</div>
-          <a
-            id="moreDistance"
-            href="#"
-            class="muted"
-            style="text-decoration: none"
-            >More ›</a
-          >
+          <a id="moreDistance" href="#" class="muted no-underline">More ›</a>
         </div>
         <canvas id="distanceChart" height="120"></canvas>
       </div>
-      <div style="margin-top: 12px">
-        <div
-          style="
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 4px;
-          "
-        >
+      <div class="mt12">
+        <div class="sectionHeader">
           <div class="muted">Servo (last)</div>
-          <a id="moreServo" href="#" class="muted" style="text-decoration: none"
-            >More ›</a
-          >
+          <a id="moreServo" href="#" class="muted no-underline">More ›</a>
         </div>
         <canvas id="servoChart" height="100"></canvas>
       </div>
-      <div style="margin-top: 12px">
-        <div
-          style="
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 4px;
-          "
-        >
+      <div class="mt12">
+        <div class="sectionHeader">
           <div class="muted">Motion (last)</div>
-          <a
-            id="moreMotion"
-            href="#"
-            class="muted"
-            style="text-decoration: none"
-            >More ›</a
-          >
+          <a id="moreMotion" href="#" class="muted no-underline">More ›</a>
         </div>
         <canvas id="motionChart" height="80"></canvas>
       </div>
       <div class="muted" id="statusText">Waiting for data…</div>
     </div>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script>
       let selectedDevice = "",
         refreshHandle,
         distanceChart,
         servoChart,
-        motionChart;
+        motionChart,
+        els,
+        distanceCtx,
+        servoCtx,
+        motionCtx;
       document.addEventListener("DOMContentLoaded", () => {
-        loadDevices(),
-          (refreshHandle = setInterval(() => {
-            updateDashboard();
-            updateCharts();
-          }, 1500)),
-          document
-            .getElementById("deviceSelect")
-            .addEventListener("change", (e) => {
-              (selectedDevice = e.target.value), updateDashboard();
-              updateCharts();
-            });
+        const $ = (id) => document.getElementById(id);
+        els = {
+          deviceSelect: $("deviceSelect"),
+          lastUpdateSmall: $("lastUpdateSmall"),
+          distance: $("distance"),
+          motion: $("motion"),
+          servoPosition: $("servoPosition"),
+          fullStatus: $("fullStatus"),
+          statusText: $("statusText"),
+          thresholdInput: $("thresholdInput"),
+          angleSlider: $("angleSlider"),
+          angleValue: $("angleValue"),
+        };
+        distanceCtx = $("distanceChart").getContext("2d");
+        servoCtx = $("servoChart").getContext("2d");
+        motionCtx = $("motionChart").getContext("2d");
 
-        const slider = document.getElementById("angleSlider");
-        const angleValue = document.getElementById("angleValue");
+        loadDevices();
+        startAutoRefresh();
+        els.deviceSelect?.addEventListener("change", (e) => {
+          selectedDevice = e.target.value;
+          updateDashboard();
+          updateCharts();
+        });
+
+        const slider = els.angleSlider;
+        const angleValue = els.angleValue;
         slider?.addEventListener("input", () => {
           angleValue.textContent = `${slider.value}°`;
         });
@@ -333,14 +172,11 @@
             sendCommand({ action: "setAngle", targetPosition: v });
           });
 
-        // Load threshold
         loadThreshold();
         document
           .getElementById("btnSaveThreshold")
           ?.addEventListener("click", async () => {
-            const val = parseFloat(
-              document.getElementById("thresholdInput").value
-            );
+            const val = parseFloat(els.thresholdInput.value);
             if (Number.isNaN(val) || val < 0) return;
             try {
               const res = await fetch("/api/settings", {
@@ -354,8 +190,7 @@
                 "statusText"
               ).textContent = `Threshold saved: ≤ ${j.thresholdCm} cm`;
             } catch (e) {
-              document.getElementById("statusText").textContent =
-                "Failed to save threshold";
+              els.statusText.textContent = "Failed to save threshold";
             }
           });
 
@@ -392,14 +227,13 @@
           });
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const j = await res.json();
-          document.getElementById("statusText").textContent =
+          els.statusText.textContent =
             j.action === "auto"
               ? "Auto mode set"
               : `Command sent: ${j.targetPosition ?? "-"}°`;
         } catch (e) {
           console.error("sendCommand", e);
-          document.getElementById("statusText").textContent =
-            "Failed to send command";
+          els.statusText.textContent = "Failed to send command";
         }
       }
       async function loadDevices() {
@@ -425,41 +259,32 @@
             t = await e.json(),
             n = selectedDevice ? t[selectedDevice] : t[Object.keys(t)[0]];
           if (!n) return void setNoData();
-          (document.getElementById("distance").textContent =
+          (els.distance.textContent =
             null != n.distance
               ? `${Number(n.distance).toFixed(1)} cm`
               : "-- cm"),
-            (document.getElementById("motion").textContent = n.motion
-              ? "Detected"
-              : "None"),
-            (document.getElementById("servoPosition").textContent =
+            (els.motion.textContent = n.motion ? "Detected" : "None"),
+            (els.servoPosition.textContent =
               null != n.servoPosition ? `${n.servoPosition}°` : "--°"),
-            (document.getElementById("fullStatus").textContent = n.isFull
-              ? "Full"
-              : "Not full"),
-            (document.getElementById(
-              "lastUpdateSmall"
-            ).textContent = `Last update: ${
+            (els.fullStatus.textContent = n.isFull ? "Full" : "Not full"),
+            (els.lastUpdateSmall.textContent = `Last update: ${
               n.serverTimestamp
                 ? new Date(n.serverTimestamp).toLocaleTimeString()
                 : "--"
             }`),
-            (document.getElementById("statusText").textContent = "Connected");
+            (els.statusText.textContent = "Connected");
         } catch (e) {
           console.error("updateDashboard", e),
-            (document.getElementById("statusText").textContent =
-              "Error fetching data");
+            (els.statusText.textContent = "Error fetching data");
         }
       }
       function setNoData() {
-        (document.getElementById("distance").textContent = "-- cm"),
-          (document.getElementById("motion").textContent = "--"),
-          (document.getElementById("servoPosition").textContent = "--°"),
-          (document.getElementById("fullStatus").textContent = "--"),
-          (document.getElementById("lastUpdateSmall").textContent =
-            "Last update: --"),
-          (document.getElementById("statusText").textContent =
-            "No devices sending data");
+        (els.distance.textContent = "-- cm"),
+          (els.motion.textContent = "--"),
+          (els.servoPosition.textContent = "--°"),
+          (els.fullStatus.textContent = "--"),
+          (els.lastUpdateSmall.textContent = "Last update: --"),
+          (els.statusText.textContent = "No devices sending data");
       }
       async function updateCharts() {
         try {
@@ -485,30 +310,27 @@
           const motion = h.motion || [];
 
           if (!distanceChart) {
-            distanceChart = new Chart(
-              document.getElementById("distanceChart").getContext("2d"),
-              {
-                type: "line",
-                data: {
-                  labels,
-                  datasets: [
-                    {
-                      label: "Distance (cm)",
-                      data: dist,
-                      borderColor: "#2563eb",
-                      tension: 0.2,
-                      pointRadius: 0,
-                    },
-                  ],
-                },
-                options: {
-                  animation: false,
-                  responsive: true,
-                  scales: { y: { title: { display: true, text: "cm" } } },
-                  plugins: { legend: { display: false } },
-                },
-              }
-            );
+            distanceChart = new Chart(distanceCtx, {
+              type: "line",
+              data: {
+                labels,
+                datasets: [
+                  {
+                    label: "Distance (cm)",
+                    data: dist,
+                    borderColor: "#2563eb",
+                    tension: 0.2,
+                    pointRadius: 0,
+                  },
+                ],
+              },
+              options: {
+                animation: false,
+                responsive: true,
+                scales: { y: { title: { display: true, text: "cm" } } },
+                plugins: { legend: { display: false } },
+              },
+            });
           } else {
             distanceChart.data.labels = labels;
             distanceChart.data.datasets[0].data = dist;
@@ -516,30 +338,27 @@
           }
 
           if (!servoChart) {
-            servoChart = new Chart(
-              document.getElementById("servoChart").getContext("2d"),
-              {
-                type: "line",
-                data: {
-                  labels,
-                  datasets: [
-                    {
-                      label: "Servo (°)",
-                      data: servo,
-                      borderColor: "#dc2626",
-                      tension: 0.2,
-                      pointRadius: 0,
-                    },
-                  ],
-                },
-                options: {
-                  animation: false,
-                  responsive: true,
-                  scales: { y: { title: { display: true, text: "degrees" } } },
-                  plugins: { legend: { display: false } },
-                },
-              }
-            );
+            servoChart = new Chart(servoCtx, {
+              type: "line",
+              data: {
+                labels,
+                datasets: [
+                  {
+                    label: "Servo (°)",
+                    data: servo,
+                    borderColor: "#dc2626",
+                    tension: 0.2,
+                    pointRadius: 0,
+                  },
+                ],
+              },
+              options: {
+                animation: false,
+                responsive: true,
+                scales: { y: { title: { display: true, text: "degrees" } } },
+                plugins: { legend: { display: false } },
+              },
+            });
           } else {
             servoChart.data.labels = labels;
             servoChart.data.datasets[0].data = servo;
@@ -547,30 +366,27 @@
           }
 
           if (!motionChart) {
-            motionChart = new Chart(
-              document.getElementById("motionChart").getContext("2d"),
-              {
-                type: "line",
-                data: {
-                  labels,
-                  datasets: [
-                    {
-                      label: "Motion",
-                      data: motion,
-                      borderColor: "#16a34a",
-                      stepped: true,
-                      pointRadius: 0,
-                    },
-                  ],
-                },
-                options: {
-                  animation: false,
-                  responsive: true,
-                  scales: { y: { min: 0, max: 1 } },
-                  plugins: { legend: { display: false } },
-                },
-              }
-            );
+            motionChart = new Chart(motionCtx, {
+              type: "line",
+              data: {
+                labels,
+                datasets: [
+                  {
+                    label: "Motion",
+                    data: motion,
+                    borderColor: "#16a34a",
+                    stepped: true,
+                    pointRadius: 0,
+                  },
+                ],
+              },
+              options: {
+                animation: false,
+                responsive: true,
+                scales: { y: { min: 0, max: 1 } },
+                plugins: { legend: { display: false } },
+              },
+            });
           } else {
             motionChart.data.labels = labels;
             motionChart.data.datasets[0].data = motion;
@@ -587,14 +403,29 @@
           const j = await res.json();
           const t = j.thresholdCm;
           if (typeof t === "number") {
-            const el = document.getElementById("thresholdInput");
-            if (el) el.value = String(t);
+            if (els.thresholdInput) els.thresholdInput.value = String(t);
           }
         } catch {}
       }
-      window.addEventListener("beforeunload", () => {
-        refreshHandle && clearInterval(refreshHandle);
+      function startAutoRefresh() {
+        if (document.hidden) return;
+        stopAutoRefresh();
+        refreshHandle = setInterval(() => {
+          updateDashboard();
+          updateCharts();
+        }, 1500);
+      }
+      function stopAutoRefresh() {
+        if (refreshHandle) {
+          clearInterval(refreshHandle);
+          refreshHandle = null;
+        }
+      }
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) stopAutoRefresh();
+        else startAutoRefresh();
       });
+      window.addEventListener("beforeunload", stopAutoRefresh);
     </script>
   </body>
 </html>
