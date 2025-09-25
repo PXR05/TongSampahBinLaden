@@ -307,33 +307,48 @@ bool ensureAuth() {
 }
 
 void setupWebServer() {
-
   server.on("/", HTTP_GET, []() {
     if (!ensureAuth())
       return;
+
     String html =
-        "<!DOCTYPE html><html><head><meta charset='utf-8'><meta "
-        "name='viewport' content='width=device-width, initial-scale=1'>"
-        "<title>ESP32 "
-        "Config</"
-        "title><style>body{font-family:sans-serif;max-width:720px;margin:24px "
-        "auto;padding:0 "
-        "12px}label{display:block;margin-top:12px}input{width:100%;padding:8px}"
-        "button{margin-top:16px;padding:10px 14px}</style></head><body>";
-    html += "<h2>ESP32 Configuration</h2>";
-    html += "<form method='POST' action='/save'>";
-    html +=
-        "<label>WiFi SSID</label><input name='ssid' value='" + cfg_ssid + "'>";
-    html += "<label>WiFi Password</label><input name='pass' type='password' "
-            "value='" +
-            cfg_password + "'>";
-    html += "<label>Server URL</label><input name='server' value='" +
-            cfg_serverURL + "'>";
-    html += "<label>Device ID</label><input name='device' value='" +
-            cfg_deviceID + "'>";
-    html += "<button type='submit'>Save & Reboot</button></form>";
-    html += "<p>AP SSID: " + String(apSsid) + "</p>";
+        "<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "<title>ESP32 Config</title>"
+        "<style>"
+        ":root{--bg:#f6f8fa;--card-bg:#fff;--border:#d0d7de;--muted:#57606a;--text:#24292e;--accent:#2563eb;}"
+        "body{font-family:system-ui,-apple-system, Segoe UI, Roboto, Arial, sans-serif;margin:0;padding:20px;background:var(--bg);color:var(--text);}"
+        ".card{background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:16px;max-width:1200px;margin:0 auto;}"
+        ".card--narrow{max-width:800px;}"
+        "h1{font-size:20px;margin:0 0 12px;}"
+        ".row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:12px;}"
+        ".controls{padding:12px;border:1px solid #e5e7eb;border-radius:12px;background:#f9fafb;margin-top:12px;}"
+        ".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;}"
+        ".control-group{display:flex;flex-direction:column;gap:8px;min-width:220px;flex:1}"
+        "label{font-size:12px;color:var(--muted);margin-bottom:6px;display:block;}"
+        "input[type='text'],input[type='password'],input[type='url']{width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);}"
+        ".btn{appearance:none;border:1px solid var(--border);background:#fff;color:var(--text);padding:8px 12px;border-radius:8px;font-size:13px;line-height:1;cursor:pointer;transition:background .15s ease,border-color .15s ease,box-shadow .15s ease;}"
+        ".btn:hover{background:#f6f8fa;border-color:#c5ced8;box-shadow:0 1px 0 rgba(27,31,36,.04);}"
+        ".btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;}"
+        ".btn.primary:hover{filter:brightness(0.95);}"
+        ".muted{color:var(--muted);font-size:12px;}"
+        ".mt12{margin-top:12px;}"
+        "</style></head><body>";
+
+    html += "<div class='card card--narrow'>";
+    html += "<h1>ESP32 Configuration</h1>";
+    html += "<form method='POST' action='/save' class='controls'>";
+    html += "<div class='grid'>";
+    html += "<div class='control-group'><label for='ssid'>WiFi SSID</label><input type='text' id='ssid' name='ssid' value='" + cfg_ssid + "'></div>";
+    html += "<div class='control-group'><label for='pass'>WiFi Password</label><input type='password' id='pass' name='pass' value='" + cfg_password + "'></div>";
+    html += "<div class='control-group'><label for='server'>Server URL</label><input type='url' id='server' name='server' value='" + cfg_serverURL + "'></div>";
+    html += "<div class='control-group'><label for='device'>Device ID</label><input type='text' id='device' name='device' value='" + cfg_deviceID + "'></div>";
+    html += "</div>";
+    html += "<div class='row mt12'><button class='btn primary' type='submit'>Save & Reboot</button><span class='muted'>AP SSID: " + String(apSsid) + "</span></div>";
+    html += "</form>";
+    html += "</div>";
     html += "</body></html>";
+
     server.send(200, "text/html", html);
   });
 
