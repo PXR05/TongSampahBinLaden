@@ -45,10 +45,11 @@ const char *apSsid = "trash";
 const char *apPassword = "trash_123";
 const char *apUser = "trash";
 
+static const int notifyPin = 33;
 static const int servoPin = 13;
 static const int trigPin = 5;
 static const int echoPin = 18;
-static const int pirPin = 15;
+static const int pirPin = 21;
 float distance;
 Servo servo;
 
@@ -166,10 +167,18 @@ void pollCommand() {
       if (cmdId > lastCommandId) {
         lastCommandId = cmdId;
         if (strcmp(action, "auto") == 0) {
+          Serial.println("Switched to auto mode");
           autoMode = true;
         } else if (strcmp(action, "setAngle") == 0) {
           int tgt = doc["targetPosition"] | currentPosition;
+          Serial.printf("Set target position to %d\n", tgt);
           requestTargetPosition(tgt);
+        } else if (strcmp(action, "notifyOn") == 0) {
+          Serial.println("Notification on");
+          digitalWrite(notifyPin, HIGH);
+        } else if (strcmp(action, "notifyOff") == 0) {
+          Serial.println("Notification off");
+          digitalWrite(notifyPin, LOW);
         }
       }
     }
@@ -179,6 +188,7 @@ void pollCommand() {
 
 void setup() {
   Serial.begin(115200);
+  pinMode(notifyPin, OUTPUT);
   pinMode(trigPin, OUTPUT);
   pinMode(echoPin, INPUT);
   pinMode(pirPin, INPUT);

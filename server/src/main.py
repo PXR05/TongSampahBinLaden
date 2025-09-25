@@ -92,6 +92,21 @@ def save_cfg(s: dict[str, float]) -> None:
 settings: dict[str, float] = load_cfg()
 
 
+def enqueue_command(
+    device_id: str, payload: dict[str, JSONLike]
+) -> dict[str, JSONLike]:
+    device_command_seq[device_id] += 1
+    cmd_id = device_command_seq[device_id]
+    command: dict[str, JSONLike] = {
+        "deviceId": device_id,
+        "commandId": cmd_id,
+        **payload,
+        "serverTimestamp": datetime.now().isoformat(),
+    }
+    device_commands[device_id] = command
+    return command
+
+
 def discord_send(content: str) -> None:
     if not DISCORD_WEBHOOK_URL:
         return
@@ -112,45 +127,36 @@ def discord_send(content: str) -> None:
 
 def alert_eval(device_id: str, distance: JSONLike) -> None:
     d = pfloat(distance)
-
     if d is None:
         return
-
     threshold = (
         pfloat(settings.get("thresholdCm"), DEFAULT_THRESHOLD_CM)
         or DEFAULT_THRESHOLD_CM
     )
-
     sustain = (
         pfloat(settings.get("alertSustainSec"), DEFAULT_ALERT_SUSTAIN_SEC)
         or DEFAULT_ALERT_SUSTAIN_SEC
     )
-
     now = datetime.now()
-
     if d <= threshold:
         since = alert_below_since[device_id]
-
         if since is None:
             alert_below_since[device_id] = now
-
             since = now
-
         elapsed = (now - since).total_seconds()
-
         if (sustain <= 0 or elapsed >= sustain) and not alert_sent[device_id]:
             msg = (
                 f"Alert: Device {device_id} distance {d:.2f} cm "
                 f"is at/below threshold {threshold:.2f} cm for "
                 f"{elapsed:.1f}s (>= {sustain:.1f}s)."
             )
-
             discord_send(msg)
+            _ = enqueue_command(device_id, {"action": "notifyOn"})
             alert_sent[device_id] = True
-
     else:
+        if alert_sent[device_id]:
+            _ = enqueue_command(device_id, {"action": "notifyOff"})
         alert_below_since[device_id] = None
-
         alert_sent[device_id] = False
 
 
@@ -353,6 +359,8 @@ def command_api():
 
         if action == "auto":
             payload: dict[str, JSONLike] = {"action": "auto"}
+        elif action == "notify":
+            payload = {"action": "notify"}
         else:
             t_raw = target
             if t_raw is None or not isinstance(t_raw, (int, float, str, bool)):
@@ -368,15 +376,7 @@ def command_api():
             target_int = clamp_deg(target_int)
             payload = {"action": "setAngle", "targetPosition": target_int}
 
-        device_command_seq[device_id] += 1
-        cmd_id = device_command_seq[device_id]
-        command: dict[str, JSONLike] = {
-            "deviceId": device_id,
-            "commandId": cmd_id,
-            **payload,
-            "serverTimestamp": datetime.now().isoformat(),
-        }
-        device_commands[device_id] = command
+        command = enqueue_command(device_id, payload)
         return jsonify({"status": "ok", **command})
 
     device_id = arg_str("deviceId")
