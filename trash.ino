@@ -68,11 +68,11 @@ unsigned long dataInterval = 1000;
 unsigned long commandPollInterval = 500;
 unsigned long lastCommandPoll = 0;
 
-int currentPosition = 180;
-int targetPosition = 180;
+int currentPosition = 0;
+int targetPosition = 0;
 int servoStep = 10;
 bool shouldActivateServo = false;
-int originalPosition = 180;
+int originalPosition = 0;
 int activatedPosition = 90;
 
 inline bool shouldRun(const unsigned long now, unsigned long &last,
