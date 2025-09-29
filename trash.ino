@@ -38,7 +38,7 @@ WebServer server(80);
 
 String cfg_ssid = "PXR";
 String cfg_password = "27092004";
-String cfg_serverURL = "http://192.168.1.10:5000";
+String cfg_serverURL = "http://10.107.173.32:5000";
 String cfg_deviceID = "esp32_trash";
 
 const char *apSsid = "trash";
@@ -68,11 +68,11 @@ unsigned long dataInterval = 1000;
 unsigned long commandPollInterval = 500;
 unsigned long lastCommandPoll = 0;
 
-int currentPosition = 0;
-int targetPosition = 0;
+int currentPosition = 180;
+int targetPosition = 180;
 int servoStep = 10;
 bool shouldActivateServo = false;
-int originalPosition = 0;
+int originalPosition = 180;
 int activatedPosition = 90;
 
 inline bool shouldRun(const unsigned long now, unsigned long &last,
