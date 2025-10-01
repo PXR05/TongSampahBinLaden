@@ -10,12 +10,22 @@
 constexpr uint32_t NTP_VALID_EPOCH = 1609459200UL; // 2021-01-01
 constexpr unsigned long WIFI_CONNECT_TIMEOUT_MS = 30000UL;
 constexpr unsigned long ULTRASONIC_TIMEOUT_US = 20000UL;
+
 constexpr float SOUND_SPEED_CM_PER_US = 0.034f;
+
+constexpr int RED_CHANNEL   = 0;
+constexpr int GREEN_CHANNEL = 1;
+constexpr int BLUE_CHANNEL  = 2;
+
+constexpr int PWM_FREQ = 5000;
+constexpr int PWM_RESOLUTION = 8;
 
 constexpr int SERVO_MIN = 0;
 constexpr int SERVO_MAX = 180;
+
 constexpr int HTTP_TIMEOUT_SENSOR_MS = 2000;
 constexpr int HTTP_TIMEOUT_COMMAND_MS = 1500;
+
 const char *API_SENSOR_PATH = "/api/sensor-data";
 const char *API_COMMAND_PATH = "/api/command";
 
@@ -32,6 +42,8 @@ inline int clampServo(int angle);
 void requestTargetPosition(int targetAngle);
 void saveConfig(const String &nssid, const String &npass, const String &nserver,
                 const String &ndevice);
+void setColor(int red, int green, int blue);
+void setupRGBLED();
 
 Preferences prefs;
 WebServer server(80);
@@ -45,7 +57,9 @@ const char *apSsid = "trash";
 const char *apPassword = "trash_123";
 const char *apUser = "trash";
 
-static const int notifyPin = 33;
+static const int notifyPinRed = 25;
+static const int notifyPinGreen = 26;
+static const int notifyPinBlue = 27;
 static const int servoPin = 13;
 static const int trigPin = 5;
 static const int echoPin = 18;
@@ -129,6 +143,24 @@ String buildTelemetryJson() {
   return jsonString;
 }
 
+void setColor(int red, int green, int blue) {
+  ledcWrite(RED_CHANNEL, red);
+  ledcWrite(GREEN_CHANNEL, green);
+  ledcWrite(BLUE_CHANNEL, blue);
+}
+
+void setupRGBLED() {
+  ledcSetup(RED_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
+  ledcSetup(GREEN_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
+  ledcSetup(BLUE_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
+
+  ledcAttachPin(notifyPinRed, RED_CHANNEL);
+  ledcAttachPin(notifyPinGreen, GREEN_CHANNEL);
+  ledcAttachPin(notifyPinBlue, BLUE_CHANNEL);
+
+  setColor(0, 0, 0);
+}
+
 void sendSensorData() {
   if (!isWifiConnected())
     return;
@@ -173,12 +205,15 @@ void pollCommand() {
           int tgt = doc["targetPosition"] | currentPosition;
           Serial.printf("Set target position to %d\n", tgt);
           requestTargetPosition(tgt);
-        } else if (strcmp(action, "notifyOn") == 0) {
-          Serial.println("Notification on");
-          digitalWrite(notifyPin, HIGH);
-        } else if (strcmp(action, "notifyOff") == 0) {
-          Serial.println("Notification off");
-          digitalWrite(notifyPin, LOW);
+        } else if (strcmp(action, "notifyEmpty") == 0) {
+          Serial.println("Notification: GREEN (Empty)");
+          setColor(0, 255, 0);  // Green
+        } else if (strcmp(action, "notifyPartial") == 0) {
+          Serial.println("Notification: BLUE (Partial)");
+          setColor(0, 0, 255);  // Blue
+        } else if (strcmp(action, "notifyFull") == 0) {
+          Serial.println("Notification: RED (Full)");
+          setColor(255, 0, 0);  // Red
         }
       }
     }
@@ -188,7 +223,9 @@ void pollCommand() {
 
 void setup() {
   Serial.begin(115200);
-  pinMode(notifyPin, OUTPUT);
+
+  setupRGBLED();
+
   pinMode(trigPin, OUTPUT);
   pinMode(echoPin, INPUT);
   pinMode(pirPin, INPUT);

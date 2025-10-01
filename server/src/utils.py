@@ -9,6 +9,7 @@ JSONLike = str | int | float | bool | None | list["JSONLike"] | dict[str, "JSONL
 
 
 DEFAULT_THRESHOLD_CM: float = 5.0
+DEFAULT_EMPTY_THRESHOLD_CM: float = 15.0
 DEFAULT_ALERT_SUSTAIN_SEC: float = 3.0
 
 

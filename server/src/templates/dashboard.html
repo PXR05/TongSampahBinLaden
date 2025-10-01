@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -60,6 +60,17 @@
                 step="0.1"
                 min="0"
                 value="5"
+              />
+              <span class="muted">cm</span>
+            </div>
+            <div class="control-row mt8">
+              <label for="emptyThresholdInput" class="muted">Empty ≥</label>
+              <input
+                id="emptyThresholdInput"
+                type="number"
+                step="0.1"
+                min="0"
+                value="15"
               />
               <span class="muted">cm</span>
             </div>
@@ -147,6 +158,7 @@
           fullStatus: $("fullStatus"),
           statusText: $("statusText"),
           thresholdInput: $("thresholdInput"),
+          emptyThresholdInput: $("emptyThresholdInput"),
           sustainInput: $("sustainInput"),
           angleSlider: $("angleSlider"),
           angleValue: $("angleValue"),
@@ -189,21 +201,28 @@
           .getElementById("btnSaveThreshold")
           ?.addEventListener("click", async () => {
             const val = parseFloat(els.thresholdInput.value);
-            if (Number.isNaN(val) || val < 0) return;
+            const emptyVal = parseFloat(els.emptyThresholdInput.value);
+            if (
+              Number.isNaN(val) ||
+              val < 0 ||
+              Number.isNaN(emptyVal) ||
+              emptyVal < 0
+            )
+              return;
             try {
               const res = await fetch("/api/settings", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                   thresholdCm: val,
+                  emptyThresholdCm: emptyVal,
                   alertSustainSec: parseFloat(els.sustainInput.value),
                 }),
               });
               if (!res.ok) throw new Error("HTTP " + res.status);
               const j = await res.json();
-              document.getElementById(
-                "statusText"
-              ).textContent = `Alert: ≤ ${j.thresholdCm} cm for ${j.alertSustainSec}s`;
+              document.getElementById("statusText").textContent =
+                `Alert: ≤ ${j.thresholdCm} cm, ≥ ${j.emptyThresholdCm} cm for ${j.alertSustainSec}s`;
             } catch (e) {
               els.statusText.textContent = "Failed to save threshold";
             }
@@ -257,13 +276,13 @@
             t = await e.json(),
             n = Object.keys(t),
             a = document.getElementById("deviceSelect");
-          (a.innerHTML =
+          ((a.innerHTML =
             '<option value="">Select...</option>' +
             n.map((e) => `<option value="${e}">${e}</option>`).join("")),
             !selectedDevice &&
               n.length &&
               ((selectedDevice = n[0]), (a.value = selectedDevice)),
-            updateDashboard();
+            updateDashboard());
         } catch (e) {
           console.error("loadDevices", e);
         }
@@ -274,7 +293,7 @@
             t = await e.json(),
             n = selectedDevice ? t[selectedDevice] : t[Object.keys(t)[0]];
           if (!n) return void setNoData();
-          (els.distance.textContent =
+          ((els.distance.textContent =
             null != n.distance
               ? `${Number(n.distance).toFixed(1)} cm`
               : "-- cm"),
@@ -287,19 +306,19 @@
                 ? new Date(n.serverTimestamp).toLocaleTimeString()
                 : "--"
             }`),
-            (els.statusText.textContent = "Connected");
+            (els.statusText.textContent = "Connected"));
         } catch (e) {
-          console.error("updateDashboard", e),
-            (els.statusText.textContent = "Error fetching data");
+          (console.error("updateDashboard", e),
+            (els.statusText.textContent = "Error fetching data"));
         }
       }
       function setNoData() {
-        (els.distance.textContent = "-- cm"),
+        ((els.distance.textContent = "-- cm"),
           (els.motion.textContent = "--"),
           (els.servoPosition.textContent = "--°"),
           (els.fullStatus.textContent = "--"),
           (els.lastUpdateSmall.textContent = "Last update: --"),
-          (els.statusText.textContent = "No devices sending data");
+          (els.statusText.textContent = "No devices sending data"));
       }
       async function updateCharts() {
         try {
@@ -311,14 +330,14 @@
           }
           const res = await fetch(
             `/api/history?deviceId=${encodeURIComponent(
-              selectedDevice
-            )}&limit=100`
+              selectedDevice,
+            )}&limit=100`,
           );
           const h = await res.json();
           if (!h || !h.timestamps) return;
 
           const labels = h.timestamps.map((t) =>
-            new Date(t).toLocaleTimeString()
+            new Date(t).toLocaleTimeString(),
           );
           const dist = h.distance || [];
           const servo = h.servo || [];
@@ -419,6 +438,11 @@
           const t = j.thresholdCm;
           if (typeof t === "number") {
             if (els.thresholdInput) els.thresholdInput.value = String(t);
+          }
+          const e = j.emptyThresholdCm;
+          if (typeof e === "number") {
+            if (els.emptyThresholdInput)
+              els.emptyThresholdInput.value = String(e);
           }
           const s = j.alertSustainSec;
           if (typeof s === "number" && els.sustainInput) {

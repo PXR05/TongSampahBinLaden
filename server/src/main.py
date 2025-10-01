@@ -15,6 +15,7 @@ from flask import Flask, jsonify, render_template, request, Response
 from .utils import (
     JSONLike,
     DEFAULT_THRESHOLD_CM,
+    DEFAULT_EMPTY_THRESHOLD_CM,
     DEFAULT_ALERT_SUSTAIN_SEC,
     pbool,
     pint,
@@ -53,6 +54,10 @@ device_history: defaultdict[str, deque[dict[str, CSVValue]]] = defaultdict(
 )
 alert_below_since: defaultdict[str, datetime | None] = defaultdict(lambda: None)
 alert_sent: defaultdict[str, bool] = defaultdict(bool)
+alert_empty_since: defaultdict[str, datetime | None] = defaultdict(lambda: None)
+alert_empty_sent: defaultdict[str, bool] = defaultdict(bool)
+alert_partial_since: defaultdict[str, datetime | None] = defaultdict(lambda: None)
+alert_partial_sent: defaultdict[str, bool] = defaultdict(bool)
 
 
 def load_cfg() -> dict[str, float]:
@@ -138,6 +143,13 @@ def alert_eval(device_id: str, distance: JSONLike) -> None:
         or DEFAULT_ALERT_SUSTAIN_SEC
     )
     now = datetime.now()
+
+    empty_threshold = (
+        pfloat(settings.get("emptyThresholdCm"), DEFAULT_EMPTY_THRESHOLD_CM)
+        or DEFAULT_EMPTY_THRESHOLD_CM
+    )
+    partial_threshold = threshold * 1.33
+
     if d <= threshold:
         since = alert_below_since[device_id]
         if since is None:
@@ -151,13 +163,60 @@ def alert_eval(device_id: str, distance: JSONLike) -> None:
                 f"{elapsed:.1f}s (>= {sustain:.1f}s)."
             )
             discord_send(msg)
-            _ = enqueue_command(device_id, {"action": "notifyOn"})
+            _ = enqueue_command(device_id, {"action": "notifyFull"})
             alert_sent[device_id] = True
+        alert_empty_since[device_id] = None
+        alert_empty_sent[device_id] = False
+        alert_partial_since[device_id] = None
+        alert_partial_sent[device_id] = False
+    elif d <= partial_threshold:
+        since = alert_partial_since[device_id]
+        if since is None:
+            alert_partial_since[device_id] = now
+            since = now
+        elapsed = (now - since).total_seconds()
+        if (sustain <= 0 or elapsed >= sustain) and not alert_partial_sent[device_id]:
+            msg = (
+                f"Alert: Device {device_id} is 3/4 full - distance {d:.2f} cm "
+                f"for {elapsed:.1f}s (>= {sustain:.1f}s)."
+            )
+            discord_send(msg)
+            _ = enqueue_command(device_id, {"action": "notifyPartial"})
+            alert_partial_sent[device_id] = True
+        if alert_sent[device_id]:
+            alert_below_since[device_id] = None
+            alert_sent[device_id] = False
+        alert_empty_since[device_id] = None
+        alert_empty_sent[device_id] = False
+    elif d >= empty_threshold:
+        since = alert_empty_since[device_id]
+        if since is None:
+            alert_empty_since[device_id] = now
+            since = now
+        elapsed = (now - since).total_seconds()
+        if (sustain <= 0 or elapsed >= sustain) and not alert_empty_sent[device_id]:
+            msg = (
+                f"Alert: Device {device_id} is empty - distance {d:.2f} cm "
+                f"for {elapsed:.1f}s (>= {sustain:.1f}s)."
+            )
+            discord_send(msg)
+            _ = enqueue_command(device_id, {"action": "notifyEmpty"})
+            alert_empty_sent[device_id] = True
+        if alert_sent[device_id]:
+            alert_below_since[device_id] = None
+            alert_sent[device_id] = False
+        alert_partial_since[device_id] = None
+        alert_partial_sent[device_id] = False
     else:
         if alert_sent[device_id]:
-            _ = enqueue_command(device_id, {"action": "notifyOff"})
-        alert_below_since[device_id] = None
-        alert_sent[device_id] = False
+            alert_below_since[device_id] = None
+            alert_sent[device_id] = False
+        if alert_empty_sent[device_id]:
+            alert_empty_since[device_id] = None
+            alert_empty_sent[device_id] = False
+        if alert_partial_sent[device_id]:
+            alert_partial_since[device_id] = None
+            alert_partial_sent[device_id] = False
 
 
 def csv_hist(device_id: str, limit: int = 100) -> list[dict[str, CSVValue]]:
@@ -468,6 +527,7 @@ def settings_api():
         return jsonify(
             {
                 "thresholdCm": settings.get("thresholdCm", 5),
+                "emptyThresholdCm": settings.get("emptyThresholdCm", 15),
                 "alertSustainSec": settings.get("alertSustainSec", 3),
             }
         )
@@ -480,6 +540,14 @@ def settings_api():
             return jsonify({"error": "thresholdCm must be a number"}), 400
         t = max(0.0, float(t))
         settings["thresholdCm"] = t
+        updated_any = True
+
+    if "emptyThresholdCm" in data:
+        e = pfloat(data.get("emptyThresholdCm"))
+        if e is None:
+            return jsonify({"error": "emptyThresholdCm must be a number"}), 400
+        e = max(0.0, float(e))
+        settings["emptyThresholdCm"] = e
         updated_any = True
 
     if "alertSustainSec" in data:
@@ -499,6 +567,7 @@ def settings_api():
         {
             "status": "ok",
             "thresholdCm": settings.get("thresholdCm", 5),
+            "emptyThresholdCm": settings.get("emptyThresholdCm", 15),
             "alertSustainSec": settings.get("alertSustainSec", 3),
         }
     )
