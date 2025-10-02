@@ -359,6 +359,10 @@ def mem_hist_page(
 
 @app.route("/api/sensor-data", methods=["POST"])
 def sensor_in():
+    auth_header = request.headers.get("Authorization")
+    if not auth_header or auth_header != f"Bearer {SITE_AUTH_PASS}":
+        return err("Unauthorized", 401)
+
     data = json_in()
     if not data:
         return err("No data provided", 400)
@@ -401,6 +405,14 @@ def sensor_in():
 @app.route("/api/command", methods=["POST", "GET"])
 def command_api():
     if request.method == "POST":
+        auth = request.authorization
+        if (
+            not auth
+            or auth.username != SITE_AUTH_USER
+            or auth.password != SITE_AUTH_PASS
+        ):
+            return auth_resp()
+
         data = json_in()
         device_id = data.get("deviceId")
         if not device_id or not isinstance(device_id, str):

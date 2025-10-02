@@ -81,6 +81,8 @@ unsigned long pirInterval = 100;
 unsigned long dataInterval = 1000;
 unsigned long commandPollInterval = 500;
 unsigned long lastCommandPoll = 0;
+unsigned long statusLedTime = 0;
+bool statusLedActive = false;
 
 int currentPosition = 0;
 int targetPosition = 0;
@@ -169,12 +171,31 @@ void sendSensorData() {
   configureHttp(http, String(cfg_serverURL) + API_SENSOR_PATH,
                 HTTP_TIMEOUT_SENSOR_MS);
   http.addHeader("Content-Type", "application/json");
+  http.addHeader("Authorization", String("Bearer ") + apPassword);
 
   String payload = buildTelemetryJson();
 
   int httpResponseCode = http.POST(payload);
-  if (httpResponseCode > 0) {
-    Serial.println(http.getString());
+  if (httpResponseCode == 200) {
+    Serial.println("Sensor data sent successfully");
+    setColor(0, 255, 0);
+    statusLedTime = millis();
+    statusLedActive = true;
+  } else if (httpResponseCode == 401) {
+    Serial.println("Authentication failed - check apPassword");
+    setColor(255, 255, 0);
+    statusLedTime = millis();
+    statusLedActive = true;
+  } else if (httpResponseCode > 0) {
+    Serial.printf("HTTP error: %d - %s\n", httpResponseCode, http.getString().c_str());
+    setColor(255, 0, 0);
+    statusLedTime = millis();
+    statusLedActive = true;
+  } else {
+    Serial.printf("Connection error: %d\n", httpResponseCode);
+    setColor(255, 0, 255);
+    statusLedTime = millis();
+    statusLedActive = true;
   }
 
   http.end();
@@ -207,13 +228,13 @@ void pollCommand() {
           requestTargetPosition(tgt);
         } else if (strcmp(action, "notifyEmpty") == 0) {
           Serial.println("Notification: GREEN (Empty)");
-          setColor(0, 255, 0);  // Green
+          setColor(0, 255, 0);
         } else if (strcmp(action, "notifyPartial") == 0) {
           Serial.println("Notification: BLUE (Partial)");
-          setColor(0, 0, 255);  // Blue
+          setColor(0, 0, 255);
         } else if (strcmp(action, "notifyFull") == 0) {
           Serial.println("Notification: RED (Full)");
-          setColor(255, 0, 0);  // Red
+          setColor(255, 0, 0);
         }
       }
     }
@@ -324,6 +345,11 @@ void loop() {
 
   if (shouldRun(currentTime, lastCommandPoll, commandPollInterval)) {
     pollCommand();
+  }
+
+  if (statusLedActive && (currentTime - statusLedTime > 500)) {
+    setColor(0, 0, 0);
+    statusLedActive = false;
   }
 }
 
