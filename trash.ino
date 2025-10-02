@@ -264,6 +264,10 @@ void setup() {
 }
 
 void readSensor() {
+  if (shouldActivateServo || currentPosition != originalPosition) {
+    return;
+  }
+
   digitalWrite(trigPin, LOW);
   delayMicroseconds(2);
   digitalWrite(trigPin, HIGH);
