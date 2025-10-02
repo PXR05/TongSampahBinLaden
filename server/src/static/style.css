@@ -8,7 +8,13 @@
 }
 
 body {
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    Segoe UI,
+    Roboto,
+    Arial,
+    sans-serif;
   margin: 0;
   padding: 20px;
   background: var(--bg);
@@ -41,11 +47,17 @@ h1 {
   margin-bottom: 12px;
 }
 
+label {
+  width: fit-content;
+  white-space: pre;
+}
+
 select,
 input[type="number"] {
   padding: 6px 8px;
   border: 1px solid #d0d7de;
   border-radius: 6px;
+  width: fit-content;
 }
 
 .grid {
@@ -84,7 +96,6 @@ input[type="number"] {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
   height: 100%;
 }
 
@@ -98,7 +109,9 @@ input[type="number"] {
   font-size: 13px;
   line-height: 1;
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease,
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
     box-shadow 0.15s ease;
 }
 

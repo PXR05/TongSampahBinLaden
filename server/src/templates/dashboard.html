@@ -250,9 +250,19 @@
           if (!selectedDevice) {
             const dd = await (await fetch("/api/device-data")).json();
             const ids = Object.keys(dd);
-            if (!ids.length) return;
+            if (!ids.length) {
+              els.statusText.textContent = "No devices available for commands";
+              return;
+            }
             selectedDevice = ids[0];
           }
+
+          const dd = await (await fetch("/api/device-data")).json();
+          if (!dd[selectedDevice]) {
+            els.statusText.textContent = `Cannot send command: ${selectedDevice} is offline`;
+            return;
+          }
+
           const body = { deviceId: selectedDevice, ...cmd };
           const res = await fetch("/api/command", {
             method: "POST",
@@ -276,12 +286,26 @@
             t = await e.json(),
             n = Object.keys(t),
             a = document.getElementById("deviceSelect");
+
+          let allDevices = n;
+          if (n.length === 0) {
+            try {
+              const devicesResponse = await fetch("/api/devices");
+              const devicesData = await devicesResponse.json();
+              allDevices = devicesData.deviceIds || [];
+            } catch (err) {
+              console.warn("Could not load historical devices", err);
+            }
+          }
+
           ((a.innerHTML =
             '<option value="">Select...</option>' +
-            n.map((e) => `<option value="${e}">${e}</option>`).join("")),
+            allDevices
+              .map((e) => `<option value="${e}">${e}</option>`)
+              .join("")),
             !selectedDevice &&
-              n.length &&
-              ((selectedDevice = n[0]), (a.value = selectedDevice)),
+              allDevices.length &&
+              ((selectedDevice = allDevices[0]), (a.value = selectedDevice)),
             updateDashboard());
         } catch (e) {
           console.error("loadDevices", e);
@@ -292,7 +316,14 @@
           const e = await fetch("/api/device-data"),
             t = await e.json(),
             n = selectedDevice ? t[selectedDevice] : t[Object.keys(t)[0]];
-          if (!n) return void setNoData();
+          if (!n) {
+            if (selectedDevice) {
+              await loadHistoricalDataForDevice(selectedDevice);
+            } else {
+              await loadMostRecentData();
+            }
+            return;
+          }
           ((els.distance.textContent =
             null != n.distance
               ? `${Number(n.distance).toFixed(1)} cm`
@@ -320,13 +351,158 @@
           (els.lastUpdateSmall.textContent = "Last update: --"),
           (els.statusText.textContent = "No devices sending data"));
       }
+
+      async function loadMostRecentData() {
+        try {
+          const devicesResponse = await fetch("/api/devices");
+          const devicesData = await devicesResponse.json();
+          const deviceIds = devicesData.deviceIds;
+
+          if (!deviceIds || deviceIds.length === 0) {
+            return void setNoData();
+          }
+
+          const mostRecentDevice = deviceIds[0];
+
+          const historyResponse = await fetch(
+            `/api/history?deviceId=${encodeURIComponent(mostRecentDevice)}&limit=1`,
+          );
+          const historyData = await historyResponse.json();
+
+          if (!historyData.timestamps || historyData.timestamps.length === 0) {
+            return void setNoData();
+          }
+
+          const latestData = {
+            distance: historyData.distance[0],
+            motion: historyData.motion[0],
+            servoPosition: historyData.servo[0],
+            serverTimestamp: historyData.timestamps[0],
+          };
+
+          let isFull = false;
+          try {
+            const settingsResponse = await fetch("/api/settings");
+            const settings = await settingsResponse.json();
+            if (
+              latestData.distance !== null &&
+              latestData.distance <= settings.thresholdCm
+            ) {
+              isFull = true;
+            }
+          } catch (e) {
+            console.warn(
+              "Could not load threshold settings for isFull calculation",
+            );
+          }
+
+          latestData.isFull = isFull;
+
+          ((els.distance.textContent =
+            null != latestData.distance
+              ? `${Number(latestData.distance).toFixed(1)} cm`
+              : "-- cm"),
+            (els.motion.textContent = latestData.motion ? "Detected" : "None"),
+            (els.servoPosition.textContent =
+              null != latestData.servoPosition
+                ? `${latestData.servoPosition}°`
+                : "--°"),
+            (els.fullStatus.textContent = latestData.isFull
+              ? "Full"
+              : "Not full"),
+            (els.lastUpdateSmall.textContent = `Last update: ${
+              latestData.serverTimestamp
+                ? new Date(latestData.serverTimestamp).toLocaleTimeString()
+                : "--"
+            } (Historical)`),
+            (els.statusText.textContent = `Showing latest data from ${mostRecentDevice} (Offline)`));
+        } catch (e) {
+          console.error("loadMostRecentData", e);
+          setNoData();
+        }
+      }
+
+      async function loadHistoricalDataForDevice(deviceId) {
+        try {
+          const historyResponse = await fetch(
+            `/api/history?deviceId=${encodeURIComponent(deviceId)}&limit=1`,
+          );
+          const historyData = await historyResponse.json();
+
+          if (!historyData.timestamps || historyData.timestamps.length === 0) {
+            return void setNoData();
+          }
+
+          const latestData = {
+            distance: historyData.distance[0],
+            motion: historyData.motion[0],
+            servoPosition: historyData.servo[0],
+            serverTimestamp: historyData.timestamps[0],
+          };
+
+          let isFull = false;
+          try {
+            const settingsResponse = await fetch("/api/settings");
+            const settings = await settingsResponse.json();
+            if (
+              latestData.distance !== null &&
+              latestData.distance <= settings.thresholdCm
+            ) {
+              isFull = true;
+            }
+          } catch (e) {
+            console.warn(
+              "Could not load threshold settings for isFull calculation",
+            );
+          }
+
+          latestData.isFull = isFull;
+
+          ((els.distance.textContent =
+            null != latestData.distance
+              ? `${Number(latestData.distance).toFixed(1)} cm`
+              : "-- cm"),
+            (els.motion.textContent = latestData.motion ? "Detected" : "None"),
+            (els.servoPosition.textContent =
+              null != latestData.servoPosition
+                ? `${latestData.servoPosition}°`
+                : "--°"),
+            (els.fullStatus.textContent = latestData.isFull
+              ? "Full"
+              : "Not full"),
+            (els.lastUpdateSmall.textContent = `Last update: ${
+              latestData.serverTimestamp
+                ? new Date(latestData.serverTimestamp).toLocaleTimeString()
+                : "--"
+            } (Historical)`),
+            (els.statusText.textContent = `Showing latest data from ${deviceId} (Offline)`));
+        } catch (e) {
+          console.error("loadHistoricalDataForDevice", e);
+          setNoData();
+        }
+      }
       async function updateCharts() {
         try {
           if (!selectedDevice) {
             const dd = await (await fetch("/api/device-data")).json();
             const ids = Object.keys(dd);
-            if (!ids.length) return;
-            selectedDevice = ids[0];
+            if (!ids.length) {
+              try {
+                const devicesResponse = await fetch("/api/devices");
+                const devicesData = await devicesResponse.json();
+                const historicalIds = devicesData.deviceIds || [];
+                if (!historicalIds.length) return;
+                selectedDevice = historicalIds[0];
+              } catch (err) {
+                console.warn(
+                  "Could not load historical devices for charts",
+                  err,
+                );
+                return;
+              }
+            } else {
+              selectedDevice = ids[0];
+            }
           }
           const res = await fetch(
             `/api/history?deviceId=${encodeURIComponent(
