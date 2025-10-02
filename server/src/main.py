@@ -130,6 +130,25 @@ def discord_send(content: str) -> None:
         pass
 
 
+def calculate_fill_status(
+    distance: float | None, threshold: float, empty_threshold: float
+) -> str:
+    """Calculate fill status based on distance and thresholds"""
+    if distance is None:
+        return "unknown"
+
+    partial_threshold = threshold * 1.33
+
+    if distance <= threshold:
+        return "full"
+    elif distance <= partial_threshold:
+        return "partial"
+    elif distance >= empty_threshold:
+        return "empty"
+    else:
+        return "partial"
+
+
 def alert_eval(device_id: str, distance: JSONLike) -> None:
     d = pfloat(distance)
     if d is None:
@@ -176,11 +195,11 @@ def alert_eval(device_id: str, distance: JSONLike) -> None:
             since = now
         elapsed = (now - since).total_seconds()
         if (sustain <= 0 or elapsed >= sustain) and not alert_partial_sent[device_id]:
-            msg = (
-                f"Alert: Device {device_id} is 3/4 full - distance {d:.2f} cm "
-                f"for {elapsed:.1f}s (>= {sustain:.1f}s)."
-            )
-            discord_send(msg)
+            # msg = (
+            #     f"Alert: Device {device_id} is 3/4 full - distance {d:.2f} cm "
+            #     f"for {elapsed:.1f}s (>= {sustain:.1f}s)."
+            # )
+            # discord_send(msg)
             _ = enqueue_command(device_id, {"action": "notifyPartial"})
             alert_partial_sent[device_id] = True
         if alert_sent[device_id]:
@@ -195,11 +214,11 @@ def alert_eval(device_id: str, distance: JSONLike) -> None:
             since = now
         elapsed = (now - since).total_seconds()
         if (sustain <= 0 or elapsed >= sustain) and not alert_empty_sent[device_id]:
-            msg = (
-                f"Alert: Device {device_id} is empty - distance {d:.2f} cm "
-                f"for {elapsed:.1f}s (>= {sustain:.1f}s)."
-            )
-            discord_send(msg)
+            # msg = (
+            #     f"Alert: Device {device_id} is empty - distance {d:.2f} cm "
+            #     f"for {elapsed:.1f}s (>= {sustain:.1f}s)."
+            # )
+            # discord_send(msg)
             _ = enqueue_command(device_id, {"action": "notifyEmpty"})
             alert_empty_sent[device_id] = True
         if alert_sent[device_id]:
@@ -281,6 +300,7 @@ def csv_hist_page(
                     "targetPosition": pint(row.get("targetPosition")),
                     "shouldActivateServo": pbool(row.get("shouldActivateServo")),
                     "isFull": pbool(row.get("isFull")),
+                    "fillStatus": row.get("fillStatus", "unknown"),
                 }
             )
     except Exception:
@@ -351,6 +371,7 @@ def mem_hist_page(
             "targetPosition": p.get("targetPosition"),
             "shouldActivateServo": p.get("shouldActivateServo"),
             "isFull": p.get("isFull"),
+            "fillStatus": p.get("fillStatus", "unknown"),
         }
         for p in sliced
     ]
@@ -373,8 +394,11 @@ def sensor_in():
     data["serverTimestamp"] = now
     dist_val = pfloat(data.get("distance"))
     thr = pfloat(settings.get("thresholdCm"), 5) or 5
+    empty_thr = pfloat(settings.get("emptyThresholdCm"), 15) or 15
     is_full = 1 if (dist_val is not None and dist_val <= thr) else 0
+    fill_status = calculate_fill_status(dist_val, thr, empty_thr)
     data["isFull"] = is_full
+    data["fillStatus"] = fill_status
     device_data[device_id] = data
 
     point: dict[str, CSVValue] = {
@@ -386,6 +410,7 @@ def sensor_in():
         "targetPosition": csv_val(data.get("targetPosition")),
         "motion": 1 if data.get("motion") else 0,
         "isFull": is_full,
+        "fillStatus": fill_status,
     }
     device_history[device_id].append(point)
 
@@ -492,6 +517,7 @@ def history_api():
             "distance": [p.get("distance") for p in series],
             "servo": [p.get("servoPosition") for p in series],
             "motion": [p.get("motion") for p in series],
+            "fillStatus": [p.get("fillStatus") for p in series],
         }
     )
 

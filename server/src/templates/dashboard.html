@@ -53,7 +53,7 @@
           <div class="control-group">
             <div class="control-title">Alert threshold</div>
             <div class="control-row">
-              <label for="thresholdInput" class="muted">Alert ≤</label>
+              <label for="thresholdInput" class="muted">Full ≤</label>
               <input
                 id="thresholdInput"
                 type="number"
@@ -109,7 +109,7 @@
           <div class="value" id="servoPosition">--°</div>
         </div>
         <div class="stat">
-          <div class="label">Full</div>
+          <div class="label">Status</div>
           <div class="value" id="fullStatus">--</div>
         </div>
       </div>
@@ -163,6 +163,24 @@
           angleSlider: $("angleSlider"),
           angleValue: $("angleValue"),
         };
+
+        function calculateFillStatus(distance, threshold, emptyThreshold) {
+          if (distance === null || distance === undefined) {
+            return "Unknown";
+          }
+
+          const partialThreshold = threshold * 1.33;
+
+          if (distance <= threshold) {
+            return "Full";
+          } else if (distance <= partialThreshold) {
+            return "Partial";
+          } else if (distance >= emptyThreshold) {
+            return "Empty";
+          } else {
+            return "Partial";
+          }
+        }
         distanceCtx = $("distanceChart").getContext("2d");
         servoCtx = $("servoChart").getContext("2d");
         motionCtx = $("motionChart").getContext("2d");
@@ -331,7 +349,19 @@
             (els.motion.textContent = n.motion ? "Detected" : "None"),
             (els.servoPosition.textContent =
               null != n.servoPosition ? `${n.servoPosition}°` : "--°"),
-            (els.fullStatus.textContent = n.isFull ? "Full" : "Not full"),
+            (els.fullStatus.textContent = n.fillStatus
+              ? n.fillStatus.charAt(0).toUpperCase() + n.fillStatus.slice(1)
+              : n.isFull
+                ? "Full"
+                : "Not full"),
+            (els.fullStatus.style.color =
+              n.fillStatus === "full" || n.isFull
+                ? "#dc3545"
+                : n.fillStatus === "partial"
+                  ? "#fd7e14"
+                  : n.fillStatus === "empty"
+                    ? "#28a745"
+                    : "#6c757d"),
             (els.lastUpdateSmall.textContent = `Last update: ${
               n.serverTimestamp
                 ? new Date(n.serverTimestamp).toLocaleTimeString()
@@ -348,6 +378,7 @@
           (els.motion.textContent = "--"),
           (els.servoPosition.textContent = "--°"),
           (els.fullStatus.textContent = "--"),
+          (els.fullStatus.style.color = "#6c757d"),
           (els.lastUpdateSmall.textContent = "Last update: --"),
           (els.statusText.textContent = "No devices sending data"));
       }
@@ -378,9 +409,13 @@
             motion: historyData.motion[0],
             servoPosition: historyData.servo[0],
             serverTimestamp: historyData.timestamps[0],
+            fillStatus: historyData.fillStatus
+              ? historyData.fillStatus[0]
+              : null,
           };
 
           let isFull = false;
+          let fillStatus = "Unknown";
           try {
             const settingsResponse = await fetch("/api/settings");
             const settings = await settingsResponse.json();
@@ -390,13 +425,23 @@
             ) {
               isFull = true;
             }
+            if (!latestData.fillStatus) {
+              fillStatus = calculateFillStatus(
+                latestData.distance,
+                settings.thresholdCm,
+                settings.emptyThresholdCm,
+              );
+            } else {
+              fillStatus = latestData.fillStatus;
+            }
           } catch (e) {
             console.warn(
-              "Could not load threshold settings for isFull calculation",
+              "Could not load threshold settings for status calculation",
             );
           }
 
           latestData.isFull = isFull;
+          latestData.fillStatus = fillStatus;
 
           ((els.distance.textContent =
             null != latestData.distance
@@ -407,9 +452,17 @@
               null != latestData.servoPosition
                 ? `${latestData.servoPosition}°`
                 : "--°"),
-            (els.fullStatus.textContent = latestData.isFull
-              ? "Full"
-              : "Not full"),
+            (els.fullStatus.textContent =
+              latestData.fillStatus ||
+              (latestData.isFull ? "Full" : "Not full")),
+            (els.fullStatus.style.color =
+              latestData.fillStatus === "full" || latestData.isFull
+                ? "#dc3545"
+                : latestData.fillStatus === "partial"
+                  ? "#fd7e14"
+                  : latestData.fillStatus === "empty"
+                    ? "#28a745"
+                    : "#6c757d"),
             (els.lastUpdateSmall.textContent = `Last update: ${
               latestData.serverTimestamp
                 ? new Date(latestData.serverTimestamp).toLocaleTimeString()
@@ -438,9 +491,13 @@
             motion: historyData.motion[0],
             servoPosition: historyData.servo[0],
             serverTimestamp: historyData.timestamps[0],
+            fillStatus: historyData.fillStatus
+              ? historyData.fillStatus[0]
+              : null,
           };
 
           let isFull = false;
+          let fillStatus = "Unknown";
           try {
             const settingsResponse = await fetch("/api/settings");
             const settings = await settingsResponse.json();
@@ -450,13 +507,23 @@
             ) {
               isFull = true;
             }
+            if (!latestData.fillStatus) {
+              fillStatus = calculateFillStatus(
+                latestData.distance,
+                settings.thresholdCm,
+                settings.emptyThresholdCm,
+              );
+            } else {
+              fillStatus = latestData.fillStatus;
+            }
           } catch (e) {
             console.warn(
-              "Could not load threshold settings for isFull calculation",
+              "Could not load threshold settings for status calculation",
             );
           }
 
           latestData.isFull = isFull;
+          latestData.fillStatus = fillStatus;
 
           ((els.distance.textContent =
             null != latestData.distance
@@ -467,9 +534,17 @@
               null != latestData.servoPosition
                 ? `${latestData.servoPosition}°`
                 : "--°"),
-            (els.fullStatus.textContent = latestData.isFull
-              ? "Full"
-              : "Not full"),
+            (els.fullStatus.textContent =
+              latestData.fillStatus ||
+              (latestData.isFull ? "Full" : "Not full")),
+            (els.fullStatus.style.color =
+              latestData.fillStatus === "full" || latestData.isFull
+                ? "#dc3545"
+                : latestData.fillStatus === "partial"
+                  ? "#fd7e14"
+                  : latestData.fillStatus === "empty"
+                    ? "#28a745"
+                    : "#6c757d"),
             (els.lastUpdateSmall.textContent = `Last update: ${
               latestData.serverTimestamp
                 ? new Date(latestData.serverTimestamp).toLocaleTimeString()

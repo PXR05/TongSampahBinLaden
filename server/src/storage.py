@@ -28,6 +28,7 @@ CSV_FIELDS: list[str] = [
     "targetPosition",
     "shouldActivateServo",
     "isFull",
+    "fillStatus",
 ]
 
 
@@ -46,9 +47,7 @@ def csv_append(row: Mapping[str, JSONLike]) -> None:
         if not exists:
             writer.writeheader()
 
-        safe: dict[str, CSVValue] = {
-            k: csv_val(row.get(k, "")) for k in CSV_FIELDS
-        }
+        safe: dict[str, CSVValue] = {k: csv_val(row.get(k, "")) for k in CSV_FIELDS}
         writer.writerow(safe)
 
 

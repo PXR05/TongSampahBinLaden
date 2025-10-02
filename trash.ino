@@ -42,7 +42,7 @@ inline int clampServo(int angle);
 void requestTargetPosition(int targetAngle);
 void saveConfig(const String &nssid, const String &npass, const String &nserver,
                 const String &ndevice);
-void setColor(int red, int green, int blue);
+// void setColor(int red, int green, int blue);
 void setupRGBLED();
 
 Preferences prefs;
@@ -145,23 +145,23 @@ String buildTelemetryJson() {
   return jsonString;
 }
 
-void setColor(int red, int green, int blue) {
-  ledcWrite(RED_CHANNEL, red);
-  ledcWrite(GREEN_CHANNEL, green);
-  ledcWrite(BLUE_CHANNEL, blue);
-}
+// void setColor(int red, int green, int blue) {
+//   ledcWrite(RED_CHANNEL, red);
+//   ledcWrite(GREEN_CHANNEL, green);
+//   ledcWrite(BLUE_CHANNEL, blue);
+// }
 
-void setupRGBLED() {
-  ledcSetup(RED_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
-  ledcSetup(GREEN_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
-  ledcSetup(BLUE_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
+// void setupRGBLED() {
+//   ledcSetup(RED_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
+//   ledcSetup(GREEN_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
+//   ledcSetup(BLUE_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
 
-  ledcAttachPin(notifyPinRed, RED_CHANNEL);
-  ledcAttachPin(notifyPinGreen, GREEN_CHANNEL);
-  ledcAttachPin(notifyPinBlue, BLUE_CHANNEL);
+//   ledcAttachPin(notifyPinRed, RED_CHANNEL);
+//   ledcAttachPin(notifyPinGreen, GREEN_CHANNEL);
+//   ledcAttachPin(notifyPinBlue, BLUE_CHANNEL);
 
-  setColor(0, 0, 0);
-}
+  // setColor(0, 0, 0);
+// }
 
 void sendSensorData() {
   if (!isWifiConnected())
@@ -178,22 +178,22 @@ void sendSensorData() {
   int httpResponseCode = http.POST(payload);
   if (httpResponseCode == 200) {
     Serial.println("Sensor data sent successfully");
-    setColor(0, 255, 0);
+    // setColor(0, 255, 0);
     statusLedTime = millis();
     statusLedActive = true;
   } else if (httpResponseCode == 401) {
     Serial.println("Authentication failed - check apPassword");
-    setColor(255, 255, 0);
+    // setColor(255, 255, 0);
     statusLedTime = millis();
     statusLedActive = true;
   } else if (httpResponseCode > 0) {
     Serial.printf("HTTP error: %d - %s\n", httpResponseCode, http.getString().c_str());
-    setColor(255, 0, 0);
+    // setColor(255, 0, 0);
     statusLedTime = millis();
     statusLedActive = true;
   } else {
     Serial.printf("Connection error: %d\n", httpResponseCode);
-    setColor(255, 0, 255);
+    // setColor(255, 0, 255);
     statusLedTime = millis();
     statusLedActive = true;
   }
@@ -228,13 +228,13 @@ void pollCommand() {
           requestTargetPosition(tgt);
         } else if (strcmp(action, "notifyEmpty") == 0) {
           Serial.println("Notification: GREEN (Empty)");
-          setColor(0, 255, 0);
+          // setColor(0, 255, 0);
         } else if (strcmp(action, "notifyPartial") == 0) {
           Serial.println("Notification: BLUE (Partial)");
-          setColor(0, 0, 255);
+          // setColor(0, 0, 255);
         } else if (strcmp(action, "notifyFull") == 0) {
           Serial.println("Notification: RED (Full)");
-          setColor(255, 0, 0);
+          // setColor(255, 0, 0);
         }
       }
     }
@@ -245,7 +245,7 @@ void pollCommand() {
 void setup() {
   Serial.begin(115200);
 
-  setupRGBLED();
+  // setupRGBLED();
 
   pinMode(trigPin, OUTPUT);
   pinMode(echoPin, INPUT);
@@ -352,7 +352,7 @@ void loop() {
   }
 
   if (statusLedActive && (currentTime - statusLedTime > 500)) {
-    setColor(0, 0, 0);
+    // setColor(0, 0, 0);
     statusLedActive = false;
   }
 }
