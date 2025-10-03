@@ -64,6 +64,7 @@ def load_cfg() -> dict[str, float]:
     default: dict[str, float] = {
         "thresholdCm": DEFAULT_THRESHOLD_CM,
         "alertSustainSec": DEFAULT_ALERT_SUSTAIN_SEC,
+        "emptyThresholdCm": DEFAULT_EMPTY_THRESHOLD_CM,
     }
     if not os.path.exists(SETTINGS_PATH):
         return default
@@ -78,9 +79,14 @@ def load_cfg() -> dict[str, float]:
                 pfloat(data.get("alertSustainSec"), DEFAULT_ALERT_SUSTAIN_SEC)
                 or DEFAULT_ALERT_SUSTAIN_SEC
             )
+            e = (
+                pfloat(data.get("emptyThresholdCm"), DEFAULT_EMPTY_THRESHOLD_CM)
+                or DEFAULT_EMPTY_THRESHOLD_CM
+            )
             return {
                 "thresholdCm": max(0.0, float(t)),
                 "alertSustainSec": max(0.0, float(s)),
+                "emptyThresholdCm": max(0.0, float(e)),
             }
     except Exception:
         return default
@@ -133,7 +139,6 @@ def discord_send(content: str) -> None:
 def calculate_fill_status(
     distance: float | None, threshold: float, empty_threshold: float
 ) -> str:
-    """Calculate fill status based on distance and thresholds"""
     if distance is None:
         return "unknown"
 

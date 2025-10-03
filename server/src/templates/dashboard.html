@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -147,6 +147,25 @@
         distanceCtx,
         servoCtx,
         motionCtx;
+
+      function calculateFillStatus(distance, threshold, emptyThreshold) {
+        if (distance === null || distance === undefined) {
+          return "Unknown";
+        }
+
+        const partialThreshold = threshold * 1.33;
+
+        if (distance <= threshold) {
+          return "Full";
+        } else if (distance <= partialThreshold) {
+          return "Partial";
+        } else if (distance >= emptyThreshold) {
+          return "Empty";
+        } else {
+          return "Partial";
+        }
+      }
+
       document.addEventListener("DOMContentLoaded", () => {
         const $ = (id) => document.getElementById(id);
         els = {
@@ -164,23 +183,6 @@
           angleValue: $("angleValue"),
         };
 
-        function calculateFillStatus(distance, threshold, emptyThreshold) {
-          if (distance === null || distance === undefined) {
-            return "Unknown";
-          }
-
-          const partialThreshold = threshold * 1.33;
-
-          if (distance <= threshold) {
-            return "Full";
-          } else if (distance <= partialThreshold) {
-            return "Partial";
-          } else if (distance >= emptyThreshold) {
-            return "Empty";
-          } else {
-            return "Partial";
-          }
-        }
         distanceCtx = $("distanceChart").getContext("2d");
         servoCtx = $("servoChart").getContext("2d");
         motionCtx = $("motionChart").getContext("2d");
@@ -239,8 +241,9 @@
               });
               if (!res.ok) throw new Error("HTTP " + res.status);
               const j = await res.json();
-              document.getElementById("statusText").textContent =
-                `Alert: ≤ ${j.thresholdCm} cm, ≥ ${j.emptyThresholdCm} cm for ${j.alertSustainSec}s`;
+              document.getElementById(
+                "statusText"
+              ).textContent = `Alert: ≤ ${j.thresholdCm} cm, ≥ ${j.emptyThresholdCm} cm for ${j.alertSustainSec}s`;
             } catch (e) {
               els.statusText.textContent = "Failed to save threshold";
             }
@@ -316,7 +319,7 @@
             }
           }
 
-          ((a.innerHTML =
+          (a.innerHTML =
             '<option value="">Select...</option>' +
             allDevices
               .map((e) => `<option value="${e}">${e}</option>`)
@@ -324,7 +327,7 @@
             !selectedDevice &&
               allDevices.length &&
               ((selectedDevice = allDevices[0]), (a.value = selectedDevice)),
-            updateDashboard());
+            updateDashboard();
         } catch (e) {
           console.error("loadDevices", e);
         }
@@ -342,7 +345,7 @@
             }
             return;
           }
-          ((els.distance.textContent =
+          (els.distance.textContent =
             null != n.distance
               ? `${Number(n.distance).toFixed(1)} cm`
               : "-- cm"),
@@ -352,35 +355,35 @@
             (els.fullStatus.textContent = n.fillStatus
               ? n.fillStatus.charAt(0).toUpperCase() + n.fillStatus.slice(1)
               : n.isFull
-                ? "Full"
-                : "Not full"),
+              ? "Full"
+              : "Not full"),
             (els.fullStatus.style.color =
               n.fillStatus === "full" || n.isFull
                 ? "#dc3545"
                 : n.fillStatus === "partial"
-                  ? "#fd7e14"
-                  : n.fillStatus === "empty"
-                    ? "#28a745"
-                    : "#6c757d"),
+                ? "#fd7e14"
+                : n.fillStatus === "empty"
+                ? "#28a745"
+                : "#6c757d"),
             (els.lastUpdateSmall.textContent = `Last update: ${
               n.serverTimestamp
                 ? new Date(n.serverTimestamp).toLocaleTimeString()
                 : "--"
             }`),
-            (els.statusText.textContent = "Connected"));
+            (els.statusText.textContent = "Connected");
         } catch (e) {
-          (console.error("updateDashboard", e),
-            (els.statusText.textContent = "Error fetching data"));
+          console.error("updateDashboard", e),
+            (els.statusText.textContent = "Error fetching data");
         }
       }
       function setNoData() {
-        ((els.distance.textContent = "-- cm"),
+        (els.distance.textContent = "-- cm"),
           (els.motion.textContent = "--"),
           (els.servoPosition.textContent = "--°"),
           (els.fullStatus.textContent = "--"),
           (els.fullStatus.style.color = "#6c757d"),
           (els.lastUpdateSmall.textContent = "Last update: --"),
-          (els.statusText.textContent = "No devices sending data"));
+          (els.statusText.textContent = "No devices sending data");
       }
 
       async function loadMostRecentData() {
@@ -396,7 +399,9 @@
           const mostRecentDevice = deviceIds[0];
 
           const historyResponse = await fetch(
-            `/api/history?deviceId=${encodeURIComponent(mostRecentDevice)}&limit=1`,
+            `/api/history?deviceId=${encodeURIComponent(
+              mostRecentDevice
+            )}&limit=1`
           );
           const historyData = await historyResponse.json();
 
@@ -429,7 +434,7 @@
               fillStatus = calculateFillStatus(
                 latestData.distance,
                 settings.thresholdCm,
-                settings.emptyThresholdCm,
+                settings.emptyThresholdCm
               );
             } else {
               fillStatus = latestData.fillStatus;
@@ -437,13 +442,14 @@
           } catch (e) {
             console.warn(
               "Could not load threshold settings for status calculation",
+              e
             );
           }
 
           latestData.isFull = isFull;
           latestData.fillStatus = fillStatus;
 
-          ((els.distance.textContent =
+          (els.distance.textContent =
             null != latestData.distance
               ? `${Number(latestData.distance).toFixed(1)} cm`
               : "-- cm"),
@@ -459,16 +465,16 @@
               latestData.fillStatus === "full" || latestData.isFull
                 ? "#dc3545"
                 : latestData.fillStatus === "partial"
-                  ? "#fd7e14"
-                  : latestData.fillStatus === "empty"
-                    ? "#28a745"
-                    : "#6c757d"),
+                ? "#fd7e14"
+                : latestData.fillStatus === "empty"
+                ? "#28a745"
+                : "#6c757d"),
             (els.lastUpdateSmall.textContent = `Last update: ${
               latestData.serverTimestamp
                 ? new Date(latestData.serverTimestamp).toLocaleTimeString()
                 : "--"
             } (Historical)`),
-            (els.statusText.textContent = `Showing latest data from ${mostRecentDevice} (Offline)`));
+            (els.statusText.textContent = `Showing latest data from ${mostRecentDevice} (Offline)`);
         } catch (e) {
           console.error("loadMostRecentData", e);
           setNoData();
@@ -478,7 +484,7 @@
       async function loadHistoricalDataForDevice(deviceId) {
         try {
           const historyResponse = await fetch(
-            `/api/history?deviceId=${encodeURIComponent(deviceId)}&limit=1`,
+            `/api/history?deviceId=${encodeURIComponent(deviceId)}&limit=1`
           );
           const historyData = await historyResponse.json();
 
@@ -511,7 +517,7 @@
               fillStatus = calculateFillStatus(
                 latestData.distance,
                 settings.thresholdCm,
-                settings.emptyThresholdCm,
+                settings.emptyThresholdCm
               );
             } else {
               fillStatus = latestData.fillStatus;
@@ -519,13 +525,14 @@
           } catch (e) {
             console.warn(
               "Could not load threshold settings for status calculation",
+              e
             );
           }
 
           latestData.isFull = isFull;
           latestData.fillStatus = fillStatus;
 
-          ((els.distance.textContent =
+          (els.distance.textContent =
             null != latestData.distance
               ? `${Number(latestData.distance).toFixed(1)} cm`
               : "-- cm"),
@@ -541,16 +548,16 @@
               latestData.fillStatus === "full" || latestData.isFull
                 ? "#dc3545"
                 : latestData.fillStatus === "partial"
-                  ? "#fd7e14"
-                  : latestData.fillStatus === "empty"
-                    ? "#28a745"
-                    : "#6c757d"),
+                ? "#fd7e14"
+                : latestData.fillStatus === "empty"
+                ? "#28a745"
+                : "#6c757d"),
             (els.lastUpdateSmall.textContent = `Last update: ${
               latestData.serverTimestamp
                 ? new Date(latestData.serverTimestamp).toLocaleTimeString()
                 : "--"
             } (Historical)`),
-            (els.statusText.textContent = `Showing latest data from ${deviceId} (Offline)`));
+            (els.statusText.textContent = `Showing latest data from ${deviceId} (Offline)`);
         } catch (e) {
           console.error("loadHistoricalDataForDevice", e);
           setNoData();
@@ -571,7 +578,7 @@
               } catch (err) {
                 console.warn(
                   "Could not load historical devices for charts",
-                  err,
+                  err
                 );
                 return;
               }
@@ -581,14 +588,14 @@
           }
           const res = await fetch(
             `/api/history?deviceId=${encodeURIComponent(
-              selectedDevice,
-            )}&limit=100`,
+              selectedDevice
+            )}&limit=100`
           );
           const h = await res.json();
           if (!h || !h.timestamps) return;
 
           const labels = h.timestamps.map((t) =>
-            new Date(t).toLocaleTimeString(),
+            new Date(t).toLocaleTimeString()
           );
           const dist = h.distance || [];
           const servo = h.servo || [];
