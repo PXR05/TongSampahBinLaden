@@ -48,9 +48,9 @@ void setupRGBLED();
 Preferences prefs;
 WebServer server(80);
 
-String cfg_ssid = "PXR";
-String cfg_password = "27092004";
-String cfg_serverURL = "http://10.107.173.32:5000";
+String cfg_ssid = "ssid";
+String cfg_password = "password";
+String cfg_serverURL = "http://10.0.0.2:5000";
 String cfg_deviceID = "esp32_trash";
 
 const char *apSsid = "trash";
