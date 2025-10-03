@@ -7,27 +7,27 @@
 
 #include <time.h>
 
-constexpr uint32_t NTP_VALID_EPOCH = 1609459200UL; // 2021-01-01
-constexpr unsigned long WIFI_CONNECT_TIMEOUT_MS = 30000UL;
-constexpr unsigned long ULTRASONIC_TIMEOUT_US = 20000UL;
+constexpr uint32_t NTP_VALID_EPOCH = 1609459200UL; // 2021-01-01 (Unix timestamp to validate NTP sync)
+constexpr unsigned long WIFI_CONNECT_TIMEOUT_MS = 30000UL; // 30 seconds max to connect to WiFi
+constexpr unsigned long ULTRASONIC_TIMEOUT_US = 20000UL; // Max time to wait for echo (prevents blocking)
 
-constexpr float SOUND_SPEED_CM_PER_US = 0.034f;
+constexpr float SOUND_SPEED_CM_PER_US = 0.034f; // Speed of sound at room temp: 343 m/s = 0.034 cm/µs
 
-constexpr int RED_CHANNEL   = 0;
+constexpr int RED_CHANNEL   = 0; // PWM channel assignments for RGB LED
 constexpr int GREEN_CHANNEL = 1;
 constexpr int BLUE_CHANNEL  = 2;
 
-constexpr int PWM_FREQ = 5000;
-constexpr int PWM_RESOLUTION = 8;
+constexpr int PWM_FREQ = 5000; // 5kHz PWM frequency (above audible range)
+constexpr int PWM_RESOLUTION = 8; // 8-bit resolution (0-255 brightness levels)
 
 constexpr int SERVO_MIN = 0;
 constexpr int SERVO_MAX = 180;
 
-constexpr int HTTP_TIMEOUT_SENSOR_MS = 2000;
-constexpr int HTTP_TIMEOUT_COMMAND_MS = 1500;
+constexpr int HTTP_TIMEOUT_SENSOR_MS = 2000; // Sensor POST can be slower (more data)
+constexpr int HTTP_TIMEOUT_COMMAND_MS = 1500; // Command GET should be fast (polling)
 
-const char *API_SENSOR_PATH = "/api/sensor-data";
-const char *API_COMMAND_PATH = "/api/command";
+const char *API_SENSOR_PATH = "/api/sensor-data"; // Endpoint to send telemetry
+const char *API_COMMAND_PATH = "/api/command"; // Endpoint to poll for commands
 
 void loadConfig();
 void setupAP();
@@ -45,56 +45,64 @@ void saveConfig(const String &nssid, const String &npass, const String &nserver,
 // void setColor(int red, int green, int blue);
 void setupRGBLED();
 
-Preferences prefs;
-WebServer server(80);
+Preferences prefs; // Non-volatile storage for configuration persistence
+WebServer server(80); // HTTP server for web-based configuration UI
 
+// Default configuration values (overridden by saved preferences)
 String cfg_ssid = "ssid";
 String cfg_password = "password";
 String cfg_serverURL = "http://10.0.0.2:5000";
 String cfg_deviceID = "esp32_trash";
 
+// Access Point credentials (for configuration mode)
 const char *apSsid = "trash";
 const char *apPassword = "trash_123";
 const char *apUser = "trash";
 
-static const int notifyPinRed = 25;
-static const int notifyPinGreen = 26;
-static const int notifyPinBlue = 27;
-static const int servoPin = 13;
-static const int trigPin = 5;
-static const int echoPin = 18;
-static const int pirPin = 21;
-float distance;
+// GPIO pin assignments
+static const int notifyPinRed = 25;   // RGB LED - Red channel
+static const int notifyPinGreen = 26; // RGB LED - Green channel
+static const int notifyPinBlue = 27;  // RGB LED - Blue channel
+static const int servoPin = 13;       // Servo motor control (lid mechanism)
+static const int trigPin = 5;         // Ultrasonic sensor trigger
+static const int echoPin = 18;        // Ultrasonic sensor echo
+static const int pirPin = 21;         // PIR motion sensor input
+float distance;                       // Last measured distance in cm
 Servo servo;
 
-bool motionDetected = false;
-bool autoMode = true;
-uint32_t lastCommandId = 0;
+// State tracking
+bool motionDetected = false; // Latest PIR sensor reading
+bool autoMode = true;        // Auto mode: servo opens on motion, closes when no motion
+uint32_t lastCommandId = 0;  // Tracks last processed command ID (prevents re-execution)
 
-unsigned long lastSensorReading = 0;
-unsigned long lastServoMove = 0;
-unsigned long lastPirCheck = 0;
-unsigned long lastDataTransmission = 0;
-unsigned long sensorInterval = 1000;
-unsigned long servoInterval = 50;
-unsigned long pirInterval = 100;
-unsigned long dataInterval = 1000;
-unsigned long commandPollInterval = 500;
-unsigned long lastCommandPoll = 0;
-unsigned long statusLedTime = 0;
-bool statusLedActive = false;
+// Non-blocking task scheduling (millis-based timestamps)
+unsigned long lastSensorReading = 0;     // Last ultrasonic sensor read time
+unsigned long lastServoMove = 0;         // Last servo position update time
+unsigned long lastPirCheck = 0;          // Last PIR motion check time
+unsigned long lastDataTransmission = 0;  // Last server data transmission time
+unsigned long sensorInterval = 1000;     // Read distance every 1 second
+unsigned long servoInterval = 50;        // Update servo every 50ms (smooth movement)
+unsigned long pirInterval = 100;         // Check motion every 100ms
+unsigned long dataInterval = 1000;       // Send data to server every 1 second
+unsigned long commandPollInterval = 500; // Poll for commands every 500ms
+unsigned long lastCommandPoll = 0;       // Last command poll time
+unsigned long statusLedTime = 0;         // When status LED was activated
+bool statusLedActive = false;            // Whether status LED is currently on
 
-int currentPosition = 0;
-int targetPosition = 0;
-int servoStep = 10;
-bool shouldActivateServo = false;
-int originalPosition = 0;
-int activatedPosition = 90;
+// Servo control state
+int currentPosition = 0;         // Current servo angle (0-180°)
+int targetPosition = 0;          // Desired servo angle
+int servoStep = 10;              // Degrees to move per update (controls speed)
+bool shouldActivateServo = false; // Whether servo should be in activated state
+int originalPosition = 0;        // Closed/resting position (lid closed)
+int activatedPosition = 90;      // Open position (lid open for trash disposal)
 
+// Non-blocking task scheduler helper: checks if enough time has elapsed
+// Updates 'last' timestamp and returns true when interval has passed
 inline bool shouldRun(const unsigned long now, unsigned long &last,
                       const unsigned long interval) {
   if (now - last >= interval) {
-    last = now;
+    last = now; // Update timestamp for next interval
     return true;
   }
   return false;
@@ -110,17 +118,18 @@ inline int clampServo(int angle) {
 
 void requestTargetPosition(int targetAngle) {
   int clamped = clampServo(targetAngle);
+  // Only accept new target if servo is not currently moving (avoids jerky motion)
   if (currentPosition == targetPosition) {
     targetPosition = clamped;
-    autoMode = false;
-    shouldActivateServo = (targetPosition != originalPosition);
+    autoMode = false; // Manual command disables auto mode
+    shouldActivateServo = (targetPosition != originalPosition); // Track if lid is open
   }
 }
 
 void configureHttp(HTTPClient &http, const String &url, int timeoutMs) {
   http.begin(url);
-  http.addHeader("Connection", "keep-alive");
-  http.setReuse(true);
+  http.addHeader("Connection", "keep-alive"); // Enable HTTP keep-alive for efficiency
+  http.setReuse(true); // Reuse TCP connection across requests
   http.setTimeout(timeoutMs);
 }
 
@@ -128,17 +137,18 @@ String buildTelemetryJson() {
   DynamicJsonDocument doc(256);
   doc["deviceId"] = cfg_deviceID.c_str();
   time_t nowSec = time(nullptr);
+  // Only include timestamp if NTP sync successful (avoids sending invalid times)
   if (nowSec > NTP_VALID_EPOCH) {
     doc["deviceTimestamp"] = (uint32_t)nowSec;
   }
-  doc["deviceUptimeMs"] = millis();
+  doc["deviceUptimeMs"] = millis(); // Device uptime for debugging connection issues
   doc["distance"] = distance;
   doc["motion"] = motionDetected;
   doc["servoPosition"] = currentPosition;
   doc["targetPosition"] = targetPosition;
   doc["shouldActivateServo"] = shouldActivateServo;
   doc["autoMode"] = autoMode;
-  doc["lastCommandId"] = lastCommandId;
+  doc["lastCommandId"] = lastCommandId; // Echo back for server-side validation
 
   String jsonString;
   serializeJson(doc, jsonString);
@@ -171,29 +181,29 @@ void sendSensorData() {
   configureHttp(http, String(cfg_serverURL) + API_SENSOR_PATH,
                 HTTP_TIMEOUT_SENSOR_MS);
   http.addHeader("Content-Type", "application/json");
-  http.addHeader("Authorization", String("Bearer ") + apPassword);
+  http.addHeader("Authorization", String("Bearer ") + apPassword); // Bearer token auth
 
   String payload = buildTelemetryJson();
 
   int httpResponseCode = http.POST(payload);
   if (httpResponseCode == 200) {
     Serial.println("Sensor data sent successfully");
-    // setColor(0, 255, 0);
+    // setColor(0, 255, 0); // GREEN = Success
     statusLedTime = millis();
     statusLedActive = true;
   } else if (httpResponseCode == 401) {
     Serial.println("Authentication failed - check apPassword");
-    // setColor(255, 255, 0);
+    // setColor(255, 255, 0); // YELLOW = Auth error
     statusLedTime = millis();
     statusLedActive = true;
   } else if (httpResponseCode > 0) {
     Serial.printf("HTTP error: %d - %s\n", httpResponseCode, http.getString().c_str());
-    // setColor(255, 0, 0);
+    // setColor(255, 0, 0); // RED = HTTP error
     statusLedTime = millis();
     statusLedActive = true;
   } else {
     Serial.printf("Connection error: %d\n", httpResponseCode);
-    // setColor(255, 0, 255);
+    // setColor(255, 0, 255); // MAGENTA = Connection error
     statusLedTime = millis();
     statusLedActive = true;
   }
@@ -206,6 +216,7 @@ void pollCommand() {
     return;
 
   HTTPClient http;
+  // Include lastId in query to prevent re-processing same command
   String url = String(cfg_serverURL) + API_COMMAND_PATH +
                "?deviceId=" + cfg_deviceID + "&lastId=" + String(lastCommandId);
   configureHttp(http, url, HTTP_TIMEOUT_COMMAND_MS);
@@ -217,15 +228,16 @@ void pollCommand() {
     if (!err) {
       uint32_t cmdId = doc["commandId"] | 0;
       const char *action = doc["action"] | "";
+      // Only process if this is a new command (higher ID than last processed)
       if (cmdId > lastCommandId) {
-        lastCommandId = cmdId;
+        lastCommandId = cmdId; // Update to prevent re-execution
         if (strcmp(action, "auto") == 0) {
           Serial.println("Switched to auto mode");
-          autoMode = true;
+          autoMode = true; // Resume motion-based automation
         } else if (strcmp(action, "setAngle") == 0) {
           int tgt = doc["targetPosition"] | currentPosition;
           Serial.printf("Set target position to %d\n", tgt);
-          requestTargetPosition(tgt);
+          requestTargetPosition(tgt); // Manual servo control
         } else if (strcmp(action, "notifyEmpty") == 0) {
           Serial.println("Notification: GREEN (Empty)");
           // setColor(0, 255, 0);
@@ -245,147 +257,159 @@ void pollCommand() {
 void setup() {
   Serial.begin(115200);
 
-  // setupRGBLED();
+  // setupRGBLED(); // RGB LED setup
 
+  // Configure sensor and actuator pins
   pinMode(trigPin, OUTPUT);
   pinMode(echoPin, INPUT);
   pinMode(pirPin, INPUT);
   servo.attach(servoPin);
-  servo.write(currentPosition);
+  servo.write(currentPosition); // Initialize servo to closed position
 
+  // Enable both AP (for config) and STA (for cloud connectivity) modes simultaneously
   WiFi.mode(WIFI_AP_STA);
-  WiFi.disconnect();
+  WiFi.disconnect(); // Clear any previous connection attempts
   delay(100);
 
-  loadConfig();
-  setupAP();
-  setupWebServer();
-  connectSTA();
+  loadConfig();      // Load saved WiFi/server settings from flash
+  setupAP();         // Start Access Point for configuration interface
+  setupWebServer();  // Start HTTP server for web UI
+  connectSTA();      // Attempt to connect to configured WiFi network
 }
 
 void readSensor() {
+  // Don't read distance when lid is open (servo activated) - prevents false readings
   if (shouldActivateServo || currentPosition != originalPosition) {
     return;
   }
 
+  // HC-SR04 ultrasonic sensor trigger sequence
   digitalWrite(trigPin, LOW);
-  delayMicroseconds(2);
+  delayMicroseconds(2); // Clean LOW pulse
   digitalWrite(trigPin, HIGH);
-  delayMicroseconds(10);
+  delayMicroseconds(10); // 10µs HIGH pulse triggers sensor
   digitalWrite(trigPin, LOW);
 
+  // Measure echo pulse width (time for sound to travel to object and back)
   unsigned long durationUs = pulseIn(echoPin, HIGH, ULTRASONIC_TIMEOUT_US);
   distance = (durationUs * SOUND_SPEED_CM_PER_US) / 2.0f;
 }
 
 void checkMotion() {
   int pirReading = digitalRead(pirPin);
-  motionDetected = (pirReading == HIGH);
+  motionDetected = (pirReading == HIGH); // PIR outputs HIGH when motion detected
 
+  // Only control servo automatically if in auto mode
   if (!autoMode) {
     return;
   }
 
+  // CASE 1: Servo is at rest (not moving)
   if (currentPosition == targetPosition) {
     if (motionDetected) {
       if (!shouldActivateServo) {
         shouldActivateServo = true;
-        targetPosition = activatedPosition;
+        targetPosition = activatedPosition; // Open lid on motion
       }
     } else {
       if (shouldActivateServo) {
         shouldActivateServo = false;
-        targetPosition = originalPosition;
+        targetPosition = originalPosition; // Close lid when no motion
       }
     }
+  // CASE 2: Servo is currently moving - update state based on motion
   } else {
     if (motionDetected) {
-      shouldActivateServo = true;
+      shouldActivateServo = true; // Keep/set activated state
     } else {
-      shouldActivateServo = false;
+      shouldActivateServo = false; // Keep/set deactivated state
     }
   }
 }
 
 void moveServo() {
   if (currentPosition != targetPosition) {
+    // Gradual movement for smooth operation (servoStep degrees per update)
     if (currentPosition < targetPosition) {
       currentPosition += servoStep;
       if (currentPosition > targetPosition) {
-        currentPosition = targetPosition;
+        currentPosition = targetPosition; // Clamp to exact target
       }
     } else {
       currentPosition -= servoStep;
       if (currentPosition < targetPosition) {
-        currentPosition = targetPosition;
+        currentPosition = targetPosition; // Clamp to exact target
       }
     }
 
-    servo.write(currentPosition);
+    servo.write(currentPosition); // Apply new position
   }
 }
 
 void loop() {
   unsigned long currentTime = millis();
 
-  yield();
-  server.handleClient();
+  yield(); // Yield to WiFi/system tasks (prevents watchdog timeout)
+  server.handleClient(); // Process incoming HTTP requests for config UI
 
+  // Non-blocking task execution using time-based scheduling
   if (shouldRun(currentTime, lastSensorReading, sensorInterval)) {
-    readSensor();
+    readSensor(); // Read ultrasonic distance sensor
   }
 
   if (shouldRun(currentTime, lastPirCheck, pirInterval)) {
-    checkMotion();
+    checkMotion(); // Check PIR sensor and update servo state
   }
 
   if (shouldRun(currentTime, lastServoMove, servoInterval)) {
-    moveServo();
+    moveServo(); // Incrementally move servo to target position
   }
 
   if (shouldRun(currentTime, lastDataTransmission, dataInterval)) {
-    sendSensorData();
+    sendSensorData(); // POST telemetry to server
   }
 
   if (shouldRun(currentTime, lastCommandPoll, commandPollInterval)) {
-    pollCommand();
+    pollCommand(); // GET pending commands from server
   }
 
+  // Auto-off status LED after 500ms
   if (statusLedActive && (currentTime - statusLedTime > 500)) {
-    // setColor(0, 0, 0);
+    // setColor(0, 0, 0); // Turn off LED
     statusLedActive = false;
   }
 }
 
 void loadConfig() {
-  prefs.begin("trash", true);
-  cfg_ssid = prefs.getString("ssid", cfg_ssid);
+  prefs.begin("trash", true); // Open preferences in read-only mode (true)
+  cfg_ssid = prefs.getString("ssid", cfg_ssid);           // Load or use default
   cfg_password = prefs.getString("pass", cfg_password);
   cfg_serverURL = prefs.getString("server", cfg_serverURL);
   cfg_deviceID = prefs.getString("device", cfg_deviceID);
-  prefs.end();
+  prefs.end(); // Close preferences to free resources
 }
 
 void setupAP() {
-  WiFi.softAP(apSsid, apPassword);
-  IPAddress ip = WiFi.softAPIP();
+  WiFi.softAP(apSsid, apPassword); // Start Access Point for configuration
+  IPAddress ip = WiFi.softAPIP();  // Typically 192.168.4.1
   Serial.print("AP SSID: ");
   Serial.println(apSsid);
   Serial.print("AP IP: ");
-  Serial.println(ip);
+  Serial.println(ip); // Connect to this IP to access config UI
 }
 
 bool ensureAuth() {
   if (server.authenticate(apUser, apPassword)) {
-    return true;
+    return true; // Authentication successful
   }
-  server.requestAuthentication();
-  return false;
+  server.requestAuthentication(); // Send 401 with WWW-Authenticate header
+  return false; // Caller should return early
 }
 
 void setupWebServer() {
+  // GET /: Serve configuration web UI (requires HTTP Basic Auth)
   server.on("/", HTTP_GET, []() {
-    if (!ensureAuth())
+    if (!ensureAuth()) // Protect config page with authentication
       return;
 
     String html =
@@ -429,31 +453,33 @@ void setupWebServer() {
     server.send(200, "text/html", html);
   });
 
+  // POST /save: Save configuration and reboot device
   server.on("/save", HTTP_POST, []() {
     if (!ensureAuth())
       return;
 
+    // Extract form parameters
     String nssid = server.hasArg("ssid") ? server.arg("ssid") : "";
     String npass = server.hasArg("pass") ? server.arg("pass") : "";
     String nserver = server.hasArg("server") ? server.arg("server") : "";
     String ndevice = server.hasArg("device") ? server.arg("device") : "";
 
-    saveConfig(nssid, npass, nserver, ndevice);
+    saveConfig(nssid, npass, nserver, ndevice); // Persist to flash
 
     server.send(200, "text/html",
                 "<html><body><h3>Saved. Rebooting...</h3></body></html>");
 
-    delay(1000);
+    delay(1000); // Allow response to be sent
 
-    ESP.restart();
+    ESP.restart(); // Reboot to apply new WiFi settings
   });
 
   server.onNotFound([]() { server.send(404, "text/plain", "Not found"); });
-  server.begin();
+  server.begin(); // Start HTTP server on port 80
 }
 
 void connectSTA() {
-  if (cfg_ssid.length() == 0)
+  if (cfg_ssid.length() == 0) // Skip if no SSID configured
     return;
 
   WiFi.begin(cfg_ssid.c_str(), cfg_password.c_str());
@@ -462,11 +488,12 @@ void connectSTA() {
 
   unsigned long wifiStartTime = millis();
 
+  // Non-blocking wait with timeout
   while (WiFi.status() != WL_CONNECTED &&
          (millis() - wifiStartTime) < WIFI_CONNECT_TIMEOUT_MS) {
     delay(500);
     Serial.print(".");
-    yield();
+    yield(); // Allow background WiFi tasks to run
   }
 
   Serial.println();
@@ -474,27 +501,31 @@ void connectSTA() {
     Serial.println("WiFi connected!");
     Serial.print("IP address: ");
     Serial.println(WiFi.localIP());
+    // Sync time via NTP (needed for device timestamps)
     configTime(0, 0, "pool.ntp.org", "time.nist.gov");
+    // Wait up to 1 second for NTP sync
     for (int i = 0; i < 10; i++) {
-      if (timeIsValid())
+      if (timeIsValid()) // Check if time is valid (> 2021)
         break;
       delay(100);
       yield();
     }
   } else {
     Serial.println("WiFi connection failed!");
+    // Device continues to operate in AP mode for configuration
   }
 }
 
 void saveConfig(const String &nssid, const String &npass, const String &nserver,
                 const String &ndevice) {
-  prefs.begin("trash", false);
+  prefs.begin("trash", false); // Open in read-write mode (false)
   prefs.putString("ssid", nssid);
   prefs.putString("pass", npass);
   prefs.putString("server", nserver);
   prefs.putString("device", ndevice);
-  prefs.end();
+  prefs.end(); // Commit to flash
 
+  // Update runtime configuration (applied after reboot)
   cfg_ssid = nssid;
   cfg_password = npass;
   cfg_serverURL = nserver;
