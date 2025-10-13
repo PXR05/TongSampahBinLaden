@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -7,38 +7,31 @@
     <link rel="stylesheet" href="/static/style.css" />
   </head>
   <body>
-    <div class="card card--narrow">
-      <h1>ESP32 Dashboard</h1>
+    <div class="card">
+      <h1>[ ESP32 Sensor Dashboard ]</h1>
       <div class="row">
-        <label for="deviceSelect">Device:</label
-        ><select id="deviceSelect">
-          <option value="">Select...</option>
+        <label for="deviceSelect">device</label>
+        <select id="deviceSelect">
+          <option value="">-- select device --</option>
         </select>
-        <div class="muted ml-auto" id="lastUpdateSmall">Last update: --</div>
+        <div class="muted" id="lastUpdateSmall">last update: --</div>
       </div>
       <div class="controls" id="controlsRow">
         <div class="controls-grid">
           <div class="control-group">
-            <div class="control-title">Mode</div>
+            <div class="control-title">[ servo control ]</div>
             <div class="control-row">
               <button
                 class="btn"
                 id="btnAuto"
                 title="Return to auto (PIR) mode"
               >
-                Auto
+                auto
               </button>
-              <button class="btn" id="btnOpen" title="Set to 90°">
-                Open 90°
-              </button>
-              <button class="btn" id="btnClose" title="Set to 0°">
-                Close 0°
-              </button>
+              <button class="btn" id="btnOpen" title="Set to 90°">open</button>
+              <button class="btn" id="btnClose" title="Set to 0°">close</button>
             </div>
-          </div>
-          <div class="control-group">
-            <div class="control-title">Servo angle</div>
-            <div class="control-row">
+            <div class="control-row mt8">
               <input
                 type="range"
                 id="angleSlider"
@@ -47,13 +40,13 @@
                 value="90"
               />
               <span id="angleValue">90°</span>
+              <button class="btn" id="btnSendAngle">send</button>
             </div>
-            <button class="btn" id="btnSendAngle">Send</button>
           </div>
           <div class="control-group">
-            <div class="control-title">Alert threshold</div>
+            <div class="control-title">[ alert threshold ]</div>
             <div class="control-row">
-              <label for="thresholdInput" class="muted">Full ≤</label>
+              <label for="thresholdInput" class="muted">full ≤</label>
               <input
                 id="thresholdInput"
                 type="number"
@@ -64,7 +57,7 @@
               <span class="muted">cm</span>
             </div>
             <div class="control-row mt8">
-              <label for="emptyThresholdInput" class="muted">Empty ≥</label>
+              <label for="emptyThresholdInput" class="muted">empty ≥</label>
               <input
                 id="emptyThresholdInput"
                 type="number"
@@ -83,58 +76,64 @@
                 min="0"
                 value="3"
               />
-              <span class="muted">seconds</span>
+              <span class="muted">sec</span>
             </div>
             <button
               class="btn"
               id="btnSaveThreshold"
               title="Save alert threshold"
             >
-              Save
+              save
             </button>
           </div>
         </div>
       </div>
-      <div class="grid row mt16">
+      <div class="grid mt16">
         <div class="stat">
-          <div class="label">Distance</div>
-          <div class="value" id="distance">-- cm</div>
+          <div class="label">distance</div>
+          <div class="value" id="distance">--</div>
         </div>
         <div class="stat">
-          <div class="label">Motion</div>
+          <div class="label">motion</div>
           <div class="value" id="motion">--</div>
         </div>
         <div class="stat">
-          <div class="label">Servo</div>
-          <div class="value" id="servoPosition">--°</div>
+          <div class="label">servo</div>
+          <div class="value" id="servoPosition">--</div>
         </div>
         <div class="stat">
-          <div class="label">Status</div>
+          <div class="label">status</div>
           <div class="value" id="fullStatus">--</div>
         </div>
       </div>
       <div class="mt16">
         <div class="sectionHeader">
-          <div class="muted">Distance (last)</div>
-          <a id="moreDistance" href="#" class="muted no-underline">More ›</a>
+          <div>distance_history</div>
+          <a id="moreDistance" href="#" class="muted no-underline">[more]</a>
         </div>
-        <canvas id="distanceChart" height="120"></canvas>
+        <div style="height: 200px; position: relative">
+          <canvas id="distanceChart"></canvas>
+        </div>
       </div>
-      <div class="mt12">
+      <div class="mt16">
         <div class="sectionHeader">
-          <div class="muted">Servo (last)</div>
-          <a id="moreServo" href="#" class="muted no-underline">More ›</a>
+          <div>servo_history</div>
+          <a id="moreServo" href="#" class="muted no-underline">[more]</a>
         </div>
-        <canvas id="servoChart" height="100"></canvas>
+        <div style="height: 180px; position: relative">
+          <canvas id="servoChart"></canvas>
+        </div>
       </div>
-      <div class="mt12">
+      <div class="mt16">
         <div class="sectionHeader">
-          <div class="muted">Motion (last)</div>
-          <a id="moreMotion" href="#" class="muted no-underline">More ›</a>
+          <div>motion_history</div>
+          <a id="moreMotion" href="#" class="muted no-underline">[more]</a>
         </div>
-        <canvas id="motionChart" height="80"></canvas>
+        <div style="height: 150px; position: relative">
+          <canvas id="motionChart"></canvas>
+        </div>
       </div>
-      <div class="muted" id="statusText">Waiting for data…</div>
+      <div class="muted" id="statusText">// waiting for data...</div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <script>
@@ -241,9 +240,8 @@
               });
               if (!res.ok) throw new Error("HTTP " + res.status);
               const j = await res.json();
-              document.getElementById(
-                "statusText"
-              ).textContent = `Alert: ≤ ${j.thresholdCm} cm, ≥ ${j.emptyThresholdCm} cm for ${j.alertSustainSec}s`;
+              document.getElementById("statusText").textContent =
+                `Alert: ≤ ${j.thresholdCm} cm, ≥ ${j.emptyThresholdCm} cm for ${j.alertSustainSec}s`;
             } catch (e) {
               els.statusText.textContent = "Failed to save threshold";
             }
@@ -319,7 +317,7 @@
             }
           }
 
-          (a.innerHTML =
+          ((a.innerHTML =
             '<option value="">Select...</option>' +
             allDevices
               .map((e) => `<option value="${e}">${e}</option>`)
@@ -327,7 +325,7 @@
             !selectedDevice &&
               allDevices.length &&
               ((selectedDevice = allDevices[0]), (a.value = selectedDevice)),
-            updateDashboard();
+            updateDashboard());
         } catch (e) {
           console.error("loadDevices", e);
         }
@@ -345,7 +343,7 @@
             }
             return;
           }
-          (els.distance.textContent =
+          ((els.distance.textContent =
             null != n.distance
               ? `${Number(n.distance).toFixed(1)} cm`
               : "-- cm"),
@@ -355,35 +353,35 @@
             (els.fullStatus.textContent = n.fillStatus
               ? n.fillStatus.charAt(0).toUpperCase() + n.fillStatus.slice(1)
               : n.isFull
-              ? "Full"
-              : "Not full"),
+                ? "Full"
+                : "Not full"),
             (els.fullStatus.style.color =
               n.fillStatus === "full" || n.isFull
                 ? "#dc3545"
                 : n.fillStatus === "partial"
-                ? "#fd7e14"
-                : n.fillStatus === "empty"
-                ? "#28a745"
-                : "#6c757d"),
+                  ? "#fd7e14"
+                  : n.fillStatus === "empty"
+                    ? "#28a745"
+                    : "#6c757d"),
             (els.lastUpdateSmall.textContent = `Last update: ${
               n.serverTimestamp
                 ? new Date(n.serverTimestamp).toLocaleTimeString()
                 : "--"
             }`),
-            (els.statusText.textContent = "Connected");
+            (els.statusText.textContent = "Connected"));
         } catch (e) {
-          console.error("updateDashboard", e),
-            (els.statusText.textContent = "Error fetching data");
+          (console.error("updateDashboard", e),
+            (els.statusText.textContent = "Error fetching data"));
         }
       }
       function setNoData() {
-        (els.distance.textContent = "-- cm"),
+        ((els.distance.textContent = "-- cm"),
           (els.motion.textContent = "--"),
           (els.servoPosition.textContent = "--°"),
           (els.fullStatus.textContent = "--"),
           (els.fullStatus.style.color = "#6c757d"),
           (els.lastUpdateSmall.textContent = "Last update: --"),
-          (els.statusText.textContent = "No devices sending data");
+          (els.statusText.textContent = "No devices sending data"));
       }
 
       async function loadMostRecentData() {
@@ -400,8 +398,8 @@
 
           const historyResponse = await fetch(
             `/api/history?deviceId=${encodeURIComponent(
-              mostRecentDevice
-            )}&limit=1`
+              mostRecentDevice,
+            )}&limit=1`,
           );
           const historyData = await historyResponse.json();
 
@@ -434,7 +432,7 @@
               fillStatus = calculateFillStatus(
                 latestData.distance,
                 settings.thresholdCm,
-                settings.emptyThresholdCm
+                settings.emptyThresholdCm,
               );
             } else {
               fillStatus = latestData.fillStatus;
@@ -442,14 +440,14 @@
           } catch (e) {
             console.warn(
               "Could not load threshold settings for status calculation",
-              e
+              e,
             );
           }
 
           latestData.isFull = isFull;
           latestData.fillStatus = fillStatus;
 
-          (els.distance.textContent =
+          ((els.distance.textContent =
             null != latestData.distance
               ? `${Number(latestData.distance).toFixed(1)} cm`
               : "-- cm"),
@@ -465,16 +463,16 @@
               latestData.fillStatus === "full" || latestData.isFull
                 ? "#dc3545"
                 : latestData.fillStatus === "partial"
-                ? "#fd7e14"
-                : latestData.fillStatus === "empty"
-                ? "#28a745"
-                : "#6c757d"),
+                  ? "#fd7e14"
+                  : latestData.fillStatus === "empty"
+                    ? "#28a745"
+                    : "#6c757d"),
             (els.lastUpdateSmall.textContent = `Last update: ${
               latestData.serverTimestamp
                 ? new Date(latestData.serverTimestamp).toLocaleTimeString()
                 : "--"
             } (Historical)`),
-            (els.statusText.textContent = `Showing latest data from ${mostRecentDevice} (Offline)`);
+            (els.statusText.textContent = `Showing latest data from ${mostRecentDevice} (Offline)`));
         } catch (e) {
           console.error("loadMostRecentData", e);
           setNoData();
@@ -484,7 +482,7 @@
       async function loadHistoricalDataForDevice(deviceId) {
         try {
           const historyResponse = await fetch(
-            `/api/history?deviceId=${encodeURIComponent(deviceId)}&limit=1`
+            `/api/history?deviceId=${encodeURIComponent(deviceId)}&limit=1`,
           );
           const historyData = await historyResponse.json();
 
@@ -517,7 +515,7 @@
               fillStatus = calculateFillStatus(
                 latestData.distance,
                 settings.thresholdCm,
-                settings.emptyThresholdCm
+                settings.emptyThresholdCm,
               );
             } else {
               fillStatus = latestData.fillStatus;
@@ -525,14 +523,14 @@
           } catch (e) {
             console.warn(
               "Could not load threshold settings for status calculation",
-              e
+              e,
             );
           }
 
           latestData.isFull = isFull;
           latestData.fillStatus = fillStatus;
 
-          (els.distance.textContent =
+          ((els.distance.textContent =
             null != latestData.distance
               ? `${Number(latestData.distance).toFixed(1)} cm`
               : "-- cm"),
@@ -548,16 +546,16 @@
               latestData.fillStatus === "full" || latestData.isFull
                 ? "#dc3545"
                 : latestData.fillStatus === "partial"
-                ? "#fd7e14"
-                : latestData.fillStatus === "empty"
-                ? "#28a745"
-                : "#6c757d"),
+                  ? "#fd7e14"
+                  : latestData.fillStatus === "empty"
+                    ? "#28a745"
+                    : "#6c757d"),
             (els.lastUpdateSmall.textContent = `Last update: ${
               latestData.serverTimestamp
                 ? new Date(latestData.serverTimestamp).toLocaleTimeString()
                 : "--"
             } (Historical)`),
-            (els.statusText.textContent = `Showing latest data from ${deviceId} (Offline)`);
+            (els.statusText.textContent = `Showing latest data from ${deviceId} (Offline)`));
         } catch (e) {
           console.error("loadHistoricalDataForDevice", e);
           setNoData();
@@ -578,7 +576,7 @@
               } catch (err) {
                 console.warn(
                   "Could not load historical devices for charts",
-                  err
+                  err,
                 );
                 return;
               }
@@ -588,14 +586,14 @@
           }
           const res = await fetch(
             `/api/history?deviceId=${encodeURIComponent(
-              selectedDevice
-            )}&limit=100`
+              selectedDevice,
+            )}&limit=100`,
           );
           const h = await res.json();
           if (!h || !h.timestamps) return;
 
           const labels = h.timestamps.map((t) =>
-            new Date(t).toLocaleTimeString()
+            new Date(t).toLocaleTimeString(),
           );
           const dist = h.distance || [];
           const servo = h.servo || [];
@@ -608,19 +606,56 @@
                 labels,
                 datasets: [
                   {
-                    label: "Distance (cm)",
+                    label: "distance_cm",
                     data: dist,
                     borderColor: "#2563eb",
-                    tension: 0.2,
+                    backgroundColor: "rgba(37, 99, 235, 0.08)",
+                    tension: 0.1,
                     pointRadius: 0,
+                    borderWidth: 2,
+                    fill: true,
                   },
                 ],
               },
               options: {
                 animation: false,
                 responsive: true,
-                scales: { y: { title: { display: true, text: "cm" } } },
-                plugins: { legend: { display: false } },
+                maintainAspectRatio: false,
+                scales: {
+                  x: {
+                    grid: { color: "#e0e0e0", drawBorder: false },
+                    ticks: {
+                      color: "#757575",
+                      font: { family: "Courier New, monospace", size: 10 },
+                    },
+                  },
+                  y: {
+                    grid: { color: "#e0e0e0", drawBorder: false },
+                    ticks: {
+                      color: "#757575",
+                      font: { family: "Courier New, monospace", size: 10 },
+                    },
+                    title: {
+                      display: true,
+                      text: "cm",
+                      color: "#757575",
+                      font: { family: "Courier New, monospace", size: 10 },
+                    },
+                  },
+                },
+                plugins: {
+                  legend: { display: false },
+                  tooltip: {
+                    backgroundColor: "#ffffff",
+                    titleColor: "#212121",
+                    bodyColor: "#212121",
+                    borderColor: "#2563eb",
+                    borderWidth: 1,
+                    titleFont: { family: "Courier New, monospace", size: 11 },
+                    bodyFont: { family: "Courier New, monospace", size: 11 },
+                    padding: 8,
+                  },
+                },
               },
             });
           } else {
@@ -636,19 +671,56 @@
                 labels,
                 datasets: [
                   {
-                    label: "Servo (°)",
+                    label: "servo_degrees",
                     data: servo,
-                    borderColor: "#dc2626",
-                    tension: 0.2,
+                    borderColor: "#f59e0b",
+                    backgroundColor: "rgba(245, 158, 11, 0.08)",
+                    tension: 0.1,
                     pointRadius: 0,
+                    borderWidth: 2,
+                    fill: true,
                   },
                 ],
               },
               options: {
                 animation: false,
                 responsive: true,
-                scales: { y: { title: { display: true, text: "degrees" } } },
-                plugins: { legend: { display: false } },
+                maintainAspectRatio: false,
+                scales: {
+                  x: {
+                    grid: { color: "#e0e0e0", drawBorder: false },
+                    ticks: {
+                      color: "#757575",
+                      font: { family: "Courier New, monospace", size: 10 },
+                    },
+                  },
+                  y: {
+                    grid: { color: "#e0e0e0", drawBorder: false },
+                    ticks: {
+                      color: "#757575",
+                      font: { family: "Courier New, monospace", size: 10 },
+                    },
+                    title: {
+                      display: true,
+                      text: "degrees",
+                      color: "#757575",
+                      font: { family: "Courier New, monospace", size: 10 },
+                    },
+                  },
+                },
+                plugins: {
+                  legend: { display: false },
+                  tooltip: {
+                    backgroundColor: "#ffffff",
+                    titleColor: "#212121",
+                    bodyColor: "#212121",
+                    borderColor: "#f59e0b",
+                    borderWidth: 1,
+                    titleFont: { family: "Courier New, monospace", size: 11 },
+                    bodyFont: { family: "Courier New, monospace", size: 11 },
+                    padding: 8,
+                  },
+                },
               },
             });
           } else {
@@ -664,19 +736,53 @@
                 labels,
                 datasets: [
                   {
-                    label: "Motion",
+                    label: "motion_detected",
                     data: motion,
-                    borderColor: "#16a34a",
+                    borderColor: "#10b981",
+                    backgroundColor: "rgba(16, 185, 129, 0.08)",
                     stepped: true,
                     pointRadius: 0,
+                    borderWidth: 2,
+                    fill: true,
                   },
                 ],
               },
               options: {
                 animation: false,
                 responsive: true,
-                scales: { y: { min: 0, max: 1 } },
-                plugins: { legend: { display: false } },
+                maintainAspectRatio: false,
+                scales: {
+                  x: {
+                    grid: { color: "#e0e0e0", drawBorder: false },
+                    ticks: {
+                      color: "#757575",
+                      font: { family: "Courier New, monospace", size: 10 },
+                    },
+                  },
+                  y: {
+                    min: 0,
+                    max: 1,
+                    grid: { color: "#e0e0e0", drawBorder: false },
+                    ticks: {
+                      color: "#757575",
+                      font: { family: "Courier New, monospace", size: 10 },
+                      stepSize: 1,
+                    },
+                  },
+                },
+                plugins: {
+                  legend: { display: false },
+                  tooltip: {
+                    backgroundColor: "#ffffff",
+                    titleColor: "#212121",
+                    bodyColor: "#212121",
+                    borderColor: "#10b981",
+                    borderWidth: 1,
+                    titleFont: { family: "Courier New, monospace", size: 11 },
+                    bodyFont: { family: "Courier New, monospace", size: 11 },
+                    padding: 8,
+                  },
+                },
               },
             });
           } else {
