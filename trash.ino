@@ -173,6 +173,8 @@ void setupRGBLED() {
   ledcSetup(GREEN_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
   ledcSetup(BLUE_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
 
+  // TODO: cobain ini kalo gabisa -> dari docs forum
+  // ledcAttach(LEDC_PIN, 50, LEDC_RESOLUTION);
   ledcAttachPin(notifyPinRed, RED_CHANNEL);
   ledcAttachPin(notifyPinGreen, GREEN_CHANNEL);
   ledcAttachPin(notifyPinBlue, BLUE_CHANNEL);
