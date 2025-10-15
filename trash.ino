@@ -155,23 +155,30 @@ String buildTelemetryJson() {
   return jsonString;
 }
 
-// void setColor(int red, int green, int blue) {
-//   ledcWrite(RED_CHANNEL, red);
-//   ledcWrite(GREEN_CHANNEL, green);
-//   ledcWrite(BLUE_CHANNEL, blue);
-// }
+void setColor(int red, int green, int blue) {
 
-// void setupRGBLED() {
-//   ledcSetup(RED_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
-//   ledcSetup(GREEN_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
-//   ledcSetup(BLUE_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
+  // ini kalo kebalik yg shared pin nya common anode (+3,3V ON 0 OFF 255)
+  // red   = 255 - red;
+  // green = 255 - green;
+  // blue  = 255 - blue;
 
-//   ledcAttachPin(notifyPinRed, RED_CHANNEL);
-//   ledcAttachPin(notifyPinGreen, GREEN_CHANNEL);
-//   ledcAttachPin(notifyPinBlue, BLUE_CHANNEL);
+  // kl yg ini GND Yg normal cathode
+  ledcWrite(RED_CHANNEL, red);
+  ledcWrite(GREEN_CHANNEL, green);
+  ledcWrite(BLUE_CHANNEL, blue);
+}
 
-  // setColor(0, 0, 0);
-// }
+void setupRGBLED() {
+  ledcSetup(RED_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
+  ledcSetup(GREEN_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
+  ledcSetup(BLUE_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
+
+  ledcAttachPin(notifyPinRed, RED_CHANNEL);
+  ledcAttachPin(notifyPinGreen, GREEN_CHANNEL);
+  ledcAttachPin(notifyPinBlue, BLUE_CHANNEL);
+
+  setColor(0, 0, 0);
+}
 
 void sendSensorData() {
   if (!isWifiConnected())
@@ -188,22 +195,22 @@ void sendSensorData() {
   int httpResponseCode = http.POST(payload);
   if (httpResponseCode == 200) {
     Serial.println("Sensor data sent successfully");
-    // setColor(0, 255, 0); // GREEN = Success
+    setColor(0, 255, 0); // GREEN = Success
     statusLedTime = millis();
     statusLedActive = true;
   } else if (httpResponseCode == 401) {
     Serial.println("Authentication failed - check apPassword");
-    // setColor(255, 255, 0); // YELLOW = Auth error
+    setColor(255, 255, 0); // YELLOW = Auth error
     statusLedTime = millis();
     statusLedActive = true;
   } else if (httpResponseCode > 0) {
     Serial.printf("HTTP error: %d - %s\n", httpResponseCode, http.getString().c_str());
-    // setColor(255, 0, 0); // RED = HTTP error
+    setColor(255, 0, 0); // RED = HTTP error
     statusLedTime = millis();
     statusLedActive = true;
   } else {
     Serial.printf("Connection error: %d\n", httpResponseCode);
-    // setColor(255, 0, 255); // MAGENTA = Connection error
+    setColor(255, 0, 255); // MAGENTA = Connection error
     statusLedTime = millis();
     statusLedActive = true;
   }
@@ -240,13 +247,13 @@ void pollCommand() {
           requestTargetPosition(tgt); // Manual servo control
         } else if (strcmp(action, "notifyEmpty") == 0) {
           Serial.println("Notification: GREEN (Empty)");
-          // setColor(0, 255, 0);
+          setColor(0, 255, 0);
         } else if (strcmp(action, "notifyPartial") == 0) {
           Serial.println("Notification: BLUE (Partial)");
-          // setColor(0, 0, 255);
+          setColor(0, 0, 255);
         } else if (strcmp(action, "notifyFull") == 0) {
           Serial.println("Notification: RED (Full)");
-          // setColor(255, 0, 0);
+          setColor(255, 0, 0);
         }
       }
     }
@@ -257,7 +264,7 @@ void pollCommand() {
 void setup() {
   Serial.begin(115200);
 
-  // setupRGBLED(); // RGB LED setup
+  setupRGBLED(); // RGB LED setup
 
   // Configure sensor and actuator pins
   pinMode(trigPin, OUTPUT);
@@ -375,7 +382,7 @@ void loop() {
 
   // Auto-off status LED after 500ms
   if (statusLedActive && (currentTime - statusLedTime > 500)) {
-    // setColor(0, 0, 0); // Turn off LED
+    setColor(0, 0, 0); // Turn off LED
     statusLedActive = false;
   }
 }
