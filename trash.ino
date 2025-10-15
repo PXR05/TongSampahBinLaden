@@ -42,7 +42,7 @@ inline int clampServo(int angle);
 void requestTargetPosition(int targetAngle);
 void saveConfig(const String &nssid, const String &npass, const String &nserver,
                 const String &ndevice);
-// void setColor(int red, int green, int blue);
+void setColor(int red, int green, int blue);
 void setupRGBLED();
 
 Preferences prefs; // Non-volatile storage for configuration persistence
