@@ -102,10 +102,11 @@
           <div class="value" id="servoPosition">--</div>
         </div>
         <div class="stat">
-          <div class="label">status</div>
-          <div class="value" id="fullStatus">--</div>
-        </div>
-      </div>
+    <div class="label">Status</div>
+    <div class="value">
+        <span id="fillStatus" class="status-indicator">--</span>
+    </div>
+</div>
       <div class="mt16">
         <div class="sectionHeader">
           <div>distance_history</div>
@@ -369,6 +370,11 @@
                 : "--"
             }`),
             (els.statusText.textContent = "Connected"));
+            const statusEl = document.getElementById('fillStatus');
+    const status = data.fillStatus || 'unknown';
+    statusEl.textContent = status.toUpperCase();
+    statusEl.className = `status-indicator status-${status}`;
+
         } catch (e) {
           (console.error("updateDashboard", e),
             (els.statusText.textContent = "Error fetching data"));

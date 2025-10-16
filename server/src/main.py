@@ -474,6 +474,15 @@ def sensor_in():
     device_id = str(data.get("deviceId") or "unknown")
     now = datetime.now().isoformat()
 
+    dist_val = pfloat(data.get("distance"))
+    
+    # Calculate fullness and status using fuzzy logic
+    fullness_pct = calculate_fullness_percent(dist_val)
+    fill_status = calculate_fill_status(dist_val)
+    
+    data["fullnessPercent"] = fullness_pct
+    data["fillStatus"] = fill_status
+
     # Augment device data with server-side calculations
     data["serverTimestamp"] = now
     dist_val = pfloat(data.get("distance"))

@@ -359,3 +359,25 @@ canvas {
 .scrollBox::-webkit-scrollbar-thumb:hover {
   background: var(--muted);
 }
+
+.status-indicator {
+    padding: 8px 16px;
+    border-radius: 4px;
+    font-weight: bold;
+}
+.status-full {
+    background-color: #dc3545;
+    color: white;
+}
+.status-medium {
+    background-color: #ffc107;
+    color: black;
+}
+.status-empty {
+    background-color: #28a745;
+    color: white;
+}
+.status-unknown {
+    background-color: #6c757d;
+    color: white;
+}
