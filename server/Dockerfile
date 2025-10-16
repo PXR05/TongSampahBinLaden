@@ -1,11 +1,9 @@
-FROM python:3.12-slim
+FROM ghcr.io/astral-sh/uv:python3.12-trixie-slim
 
 WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1
+    PYTHONDONTWRITEBYTECODE=1
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
@@ -14,7 +12,7 @@ RUN apt-get update && \
 
 COPY pyproject.toml ./
 
-RUN pip install --no-cache-dir -e .
+RUN uv pip install --system -e .
 
 COPY src/ ./src/
 
