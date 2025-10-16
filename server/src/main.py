@@ -13,6 +13,8 @@ from functools import wraps
 
 
 from flask import Flask, jsonify, render_template, request, Response
+
+from server.src.models.fuzzy_model import compute_fullness
 from .utils import (
     JSONLike,
     DEFAULT_THRESHOLD_CM,
@@ -476,20 +478,14 @@ def sensor_in():
 
     dist_val = pfloat(data.get("distance"))
     
-    # Calculate fullness and status using fuzzy logic
-    fullness_pct = calculate_fullness_percent(dist_val)
-    fill_status = calculate_fill_status(dist_val)
-    
-    data["fullnessPercent"] = fullness_pct
-    data["fillStatus"] = fill_status
-
-    # Augment device data with server-side calculations
+        # Augment device data with server-side calculations
     data["serverTimestamp"] = now
     dist_val = pfloat(data.get("distance"))
     thr = pfloat(settings.get("thresholdCm"), 5) or 5
     empty_thr = pfloat(settings.get("emptyThresholdCm"), 15) or 15
     is_full = 1 if (dist_val is not None and dist_val <= thr) else 0
-    fill_status = calculate_fill_status(dist_val, thr, empty_thr)
+    # fill_status = calculate_fill_status(dist_val, thr, empty_thr)
+    fill_status = compute_fullness(dist_val)
     data["isFull"] = is_full
     data["fillStatus"] = fill_status
     # Store latest state in memory (overwrites previous)

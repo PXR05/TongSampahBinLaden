@@ -4,11 +4,6 @@ from typing import cast
 
 from flask import Response, jsonify, request
 
-from models.fuzzy_model import compute_fullness
-
-import os
-import sys
-
 
 JSONLike = str | int | float | bool | None | list["JSONLike"] | dict[str, "JSONLike"]
 
@@ -70,17 +65,3 @@ def arg_str(name: str, default: str | None = None) -> str | None:
         return default
     s = val.strip()
     return s if s else default
-
-def calculate_fill_status(distance: float | None, full_threshold: float = 4.0, empty_threshold: float = 10.0) -> str:
-    """Calculate fill status based on fuzzy fullness percentage"""
-    if distance is None:
-        return "unknown"
-        
-    fullness = compute_fullness(distance)
-    
-    if fullness >= 70:
-        return "full"
-    elif fullness >= 30:
-        return "medium"
-    else:
-        return "empty"
