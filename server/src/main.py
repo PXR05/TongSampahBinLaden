@@ -739,8 +739,8 @@ def settings_api():
 
 P = ParamSpec("P")
 R = TypeVar("R")
-SITE_AUTH_USER = "trash"
-SITE_AUTH_PASS = "trash_123"
+SITE_AUTH_USER = os.getenv("SITE_AUTH_USER", "trash")
+SITE_AUTH_PASS = os.getenv("SITE_AUTH_PASS", "trash_123")
 
 
 def auth_resp() -> Response:
