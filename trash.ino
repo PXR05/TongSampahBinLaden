@@ -163,21 +163,21 @@ void setColor(int red, int green, int blue) {
   // blue  = 255 - blue;
 
   // kl yg ini GND Yg normal cathode
-  ledcWrite(RED_CHANNEL, red);
-  ledcWrite(GREEN_CHANNEL, green);
-  ledcWrite(BLUE_CHANNEL, blue);
+  // ledcWrite(RED_CHANNEL, red);
+  // ledcWrite(GREEN_CHANNEL, green);
+  // ledcWrite(BLUE_CHANNEL, blue);
 }
 
 void setupRGBLED() {
-  ledcSetup(RED_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
-  ledcSetup(GREEN_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
-  ledcSetup(BLUE_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
+  // ledcSetup(RED_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
+  // ledcSetup(GREEN_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
+  // ledcSetup(BLUE_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
 
   // TODO: cobain ini kalo gabisa -> dari docs forum
   // ledcAttach(LEDC_PIN, 50, LEDC_RESOLUTION);
-  ledcAttachPin(notifyPinRed, RED_CHANNEL);
-  ledcAttachPin(notifyPinGreen, GREEN_CHANNEL);
-  ledcAttachPin(notifyPinBlue, BLUE_CHANNEL);
+  // ledcAttach(notifyPinRed, PWM_FREQ, RED_CHANNEL);
+  // ledcAttach(notifyPinGreen, PWM_FREQ, GREEN_CHANNEL);
+  // ledcAttach(notifyPinBlue, PWM_FREQ, BLUE_CHANNEL);
 
   setColor(0, 0, 0);
 }
