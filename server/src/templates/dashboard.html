@@ -1,112 +1,86 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ESP32 Dashboard</title>
-    <link rel="stylesheet" href="/static/style.css" />
-  </head>
-  <body>
-    <div class="card">
-      <h1>[ ESP32 Sensor Dashboard ]</h1>
-      <div class="row">
-        <label for="deviceSelect">device</label>
-        <select id="deviceSelect">
-          <option value="">-- select device --</option>
-        </select>
-        <div class="muted" id="lastUpdateSmall">last update: --</div>
-      </div>
-      <div class="controls" id="controlsRow">
-        <div class="controls-grid">
-          <div class="control-group">
-            <div class="control-title">[ servo control ]</div>
-            <div class="control-row">
-              <button
-                class="btn"
-                id="btnAuto"
-                title="Return to auto (PIR) mode"
-              >
-                auto
-              </button>
-              <button class="btn" id="btnOpen" title="Set to 90°">open</button>
-              <button class="btn" id="btnClose" title="Set to 0°">close</button>
-            </div>
-            <div class="control-row mt8">
-              <input
-                type="range"
-                id="angleSlider"
-                min="0"
-                max="180"
-                value="90"
-              />
-              <span id="angleValue">90°</span>
-              <button class="btn" id="btnSendAngle">send</button>
-            </div>
-          </div>
-          <div class="control-group">
-            <div class="control-title">[ alert threshold ]</div>
-            <div class="control-row">
-              <label for="thresholdInput" class="muted">full ≤</label>
-              <input
-                id="thresholdInput"
-                type="number"
-                step="0.1"
-                min="0"
-                value="5"
-              />
-              <span class="muted">cm</span>
-            </div>
-            <div class="control-row mt8">
-              <label for="emptyThresholdInput" class="muted">empty ≥</label>
-              <input
-                id="emptyThresholdInput"
-                type="number"
-                step="0.1"
-                min="0"
-                value="15"
-              />
-              <span class="muted">cm</span>
-            </div>
-            <div class="control-row mt8">
-              <label for="sustainInput" class="muted">for</label>
-              <input
-                id="sustainInput"
-                type="number"
-                step="0.5"
-                min="0"
-                value="3"
-              />
-              <span class="muted">sec</span>
-            </div>
-            <button
-              class="btn"
-              id="btnSaveThreshold"
-              title="Save alert threshold"
-            >
-              save
-            </button>
-          </div>
-        </div>
-      </div>
-      <div class="grid mt16">
-        <div class="stat">
-          <div class="label">distance</div>
-          <div class="value" id="distance">--</div>
-        </div>
-        <div class="stat">
-          <div class="label">motion</div>
-          <div class="value" id="motion">--</div>
-        </div>
-        <div class="stat">
-          <div class="label">servo</div>
-          <div class="value" id="servoPosition">--</div>
-        </div>
-        <div class="stat">
-    <div class="label">Status</div>
-    <div class="value">
-        <span id="fillStatus" class="status-indicator">--</span>
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ESP32 Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+
+<body>
+  <div class="card">
+    <h1>[ ESP32 Sensor Dashboard ]</h1>
+    <div class="row">
+      <label for="deviceSelect">device</label>
+      <select id="deviceSelect">
+        <option value="">-- select device --</option>
+      </select>
+      <div class="muted" id="lastUpdateSmall">last update: --</div>
     </div>
-</div>
+    <div class="controls" id="controlsRow">
+      <div class="controls-grid">
+        <div class="control-group">
+          <div class="control-title">[ servo control ]</div>
+          <div class="control-row">
+            <button class="btn" id="btnAuto" title="Return to auto (PIR) mode">
+              auto
+            </button>
+            <button class="btn" id="btnOpen" title="Set to 90°">open</button>
+            <button class="btn" id="btnClose" title="Set to 0°">close</button>
+          </div>
+          <div class="control-row mt8">
+            <input type="range" id="angleSlider" min="0" max="180" value="90" />
+            <span id="angleValue">90°</span>
+            <button class="btn" id="btnSendAngle">send</button>
+          </div>
+        </div>
+        <div class="control-group">
+          <div class="control-title">[ alert threshold ]</div>
+          <div class="control-row">
+            <label for="thresholdInput" class="muted">full ≤</label>
+            <input id="thresholdInput" type="number" step="0.1" min="0" value="5" />
+            <span class="muted">cm</span>
+          </div>
+          <div class="control-row mt8">
+            <label for="emptyThresholdInput" class="muted">empty ≥</label>
+            <input id="emptyThresholdInput" type="number" step="0.1" min="0" value="15" />
+            <span class="muted">cm</span>
+          </div>
+          <div class="control-row mt8">
+            <label for="sustainInput" class="muted">for</label>
+            <input id="sustainInput" type="number" step="0.5" min="0" value="3" />
+            <span class="muted">sec</span>
+          </div>
+          <button class="btn" id="btnSaveThreshold" title="Save alert threshold">
+            save
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="grid mt16">
+      <div class="stat">
+        <div class="label">distance</div>
+        <div class="value" id="distance">--</div>
+      </div>
+      <div class="stat">
+        <div class="label">motion</div>
+        <div class="value" id="motion">--</div>
+      </div>
+      <div class="stat">
+        <div class="label">servo</div>
+        <div class="value" id="servoPosition">--</div>
+      </div>
+      <div class="stat">
+        <div class="label">Model Fullness</div>
+        <div class="value" id="regressionFullness">--</div>
+      </div>
+      <div class="stat">
+        <div class="label">Status</div>
+        <div class="value">
+          <span id="fillStatus" class="status-indicator">--</span>
+        </div>
+      </div>
       <div class="mt16">
         <div class="sectionHeader">
           <div>distance_history</div>
@@ -134,6 +108,15 @@
           <canvas id="motionChart"></canvas>
         </div>
       </div>
+      <div class="mt16">
+        <div class="sectionHeader">
+          <div>model_fullness_history</div>
+          <a id="moreModel" href="#" class="muted no-underline">[more]</a>
+        </div>
+        <div style="height: 200px; position: relative">
+          <canvas id="regressionChart"></canvas>
+        </div>
+      </div>
       <div class="muted" id="statusText">// waiting for data...</div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
@@ -143,10 +126,12 @@
         distanceChart,
         servoChart,
         motionChart,
+        regressionChart,
         els,
         distanceCtx,
         servoCtx,
-        motionCtx;
+        motionCtx,
+        regressionCtx;
 
       function calculateFillStatus(distance, threshold, emptyThreshold) {
         if (distance === null || distance === undefined) {
@@ -175,6 +160,7 @@
           motion: $("motion"),
           servoPosition: $("servoPosition"),
           fullStatus: $("fullStatus"),
+          regressionFullness: $("regressionFullness"),
           statusText: $("statusText"),
           thresholdInput: $("thresholdInput"),
           emptyThresholdInput: $("emptyThresholdInput"),
@@ -186,6 +172,7 @@
         distanceCtx = $("distanceChart").getContext("2d");
         servoCtx = $("servoChart").getContext("2d");
         motionCtx = $("motionChart").getContext("2d");
+        regressionCtx = $("regressionChart").getContext("2d");
 
         loadDevices();
         startAutoRefresh();
@@ -263,6 +250,7 @@
         bindMore("moreDistance");
         bindMore("moreServo");
         bindMore("moreMotion");
+        bindMore("moreModel");
       });
 
       async function sendCommand(cmd) {
@@ -324,8 +312,8 @@
               .map((e) => `<option value="${e}">${e}</option>`)
               .join("")),
             !selectedDevice &&
-              allDevices.length &&
-              ((selectedDevice = allDevices[0]), (a.value = selectedDevice)),
+            allDevices.length &&
+            ((selectedDevice = allDevices[0]), (a.value = selectedDevice)),
             updateDashboard());
         } catch (e) {
           console.error("loadDevices", e);
@@ -356,6 +344,10 @@
               : n.isFull
                 ? "Full"
                 : "Not full"),
+            (els.regressionFullness.textContent =
+              n.regressionFullness != null
+                ? `${Number(n.regressionFullness).toFixed(1)} %`
+                : "-- %"),
             (els.fullStatus.style.color =
               n.fillStatus === "full" || n.isFull
                 ? "#dc3545"
@@ -364,16 +356,15 @@
                   : n.fillStatus === "empty"
                     ? "#28a745"
                     : "#6c757d"),
-            (els.lastUpdateSmall.textContent = `Last update: ${
-              n.serverTimestamp
+            (els.lastUpdateSmall.textContent = `Last update: ${n.serverTimestamp
                 ? new Date(n.serverTimestamp).toLocaleTimeString()
                 : "--"
-            }`),
+              }`),
             (els.statusText.textContent = "Connected"));
-            const statusEl = document.getElementById('fillStatus');
-    const status = data.fillStatus || 'unknown';
-    statusEl.textContent = status.toUpperCase();
-    statusEl.className = `status-indicator status-${status}`;
+          const statusEl = document.getElementById('fillStatus');
+          const status = data.fillStatus || 'unknown';
+          statusEl.textContent = status.toUpperCase();
+          statusEl.className = `status-indicator status-${status}`;
 
         } catch (e) {
           (console.error("updateDashboard", e),
@@ -385,6 +376,7 @@
           (els.motion.textContent = "--"),
           (els.servoPosition.textContent = "--°"),
           (els.fullStatus.textContent = "--"),
+          (els.regressionFullness.textContent = "-- %"),
           (els.fullStatus.style.color = "#6c757d"),
           (els.lastUpdateSmall.textContent = "Last update: --"),
           (els.statusText.textContent = "No devices sending data"));
@@ -421,88 +413,8 @@
             fillStatus: historyData.fillStatus
               ? historyData.fillStatus[0]
               : null,
-          };
-
-          let isFull = false;
-          let fillStatus = "Unknown";
-          try {
-            const settingsResponse = await fetch("/api/settings");
-            const settings = await settingsResponse.json();
-            if (
-              latestData.distance !== null &&
-              latestData.distance <= settings.thresholdCm
-            ) {
-              isFull = true;
-            }
-            if (!latestData.fillStatus) {
-              fillStatus = calculateFillStatus(
-                latestData.distance,
-                settings.thresholdCm,
-                settings.emptyThresholdCm,
-              );
-            } else {
-              fillStatus = latestData.fillStatus;
-            }
-          } catch (e) {
-            console.warn(
-              "Could not load threshold settings for status calculation",
-              e,
-            );
-          }
-
-          latestData.isFull = isFull;
-          latestData.fillStatus = fillStatus;
-
-          ((els.distance.textContent =
-            null != latestData.distance
-              ? `${Number(latestData.distance).toFixed(1)} cm`
-              : "-- cm"),
-            (els.motion.textContent = latestData.motion ? "Detected" : "None"),
-            (els.servoPosition.textContent =
-              null != latestData.servoPosition
-                ? `${latestData.servoPosition}°`
-                : "--°"),
-            (els.fullStatus.textContent =
-              latestData.fillStatus ||
-              (latestData.isFull ? "Full" : "Not full")),
-            (els.fullStatus.style.color =
-              latestData.fillStatus === "full" || latestData.isFull
-                ? "#dc3545"
-                : latestData.fillStatus === "partial"
-                  ? "#fd7e14"
-                  : latestData.fillStatus === "empty"
-                    ? "#28a745"
-                    : "#6c757d"),
-            (els.lastUpdateSmall.textContent = `Last update: ${
-              latestData.serverTimestamp
-                ? new Date(latestData.serverTimestamp).toLocaleTimeString()
-                : "--"
-            } (Historical)`),
-            (els.statusText.textContent = `Showing latest data from ${mostRecentDevice} (Offline)`));
-        } catch (e) {
-          console.error("loadMostRecentData", e);
-          setNoData();
-        }
-      }
-
-      async function loadHistoricalDataForDevice(deviceId) {
-        try {
-          const historyResponse = await fetch(
-            `/api/history?deviceId=${encodeURIComponent(deviceId)}&limit=1`,
-          );
-          const historyData = await historyResponse.json();
-
-          if (!historyData.timestamps || historyData.timestamps.length === 0) {
-            return void setNoData();
-          }
-
-          const latestData = {
-            distance: historyData.distance[0],
-            motion: historyData.motion[0],
-            servoPosition: historyData.servo[0],
-            serverTimestamp: historyData.timestamps[0],
-            fillStatus: historyData.fillStatus
-              ? historyData.fillStatus[0]
+            regressionFullness: historyData.regressionFullness
+              ? historyData.regressionFullness[0]
               : null,
           };
 
@@ -548,6 +460,10 @@
             (els.fullStatus.textContent =
               latestData.fillStatus ||
               (latestData.isFull ? "Full" : "Not full")),
+            (els.regressionFullness.textContent =
+              latestData.regressionFullness != null
+                ? `${Number(latestData.regressionFullness).toFixed(1)} %`
+                : "-- %"),
             (els.fullStatus.style.color =
               latestData.fillStatus === "full" || latestData.isFull
                 ? "#dc3545"
@@ -556,11 +472,99 @@
                   : latestData.fillStatus === "empty"
                     ? "#28a745"
                     : "#6c757d"),
-            (els.lastUpdateSmall.textContent = `Last update: ${
-              latestData.serverTimestamp
+            (els.lastUpdateSmall.textContent = `Last update: ${latestData.serverTimestamp
                 ? new Date(latestData.serverTimestamp).toLocaleTimeString()
                 : "--"
-            } (Historical)`),
+              } (Historical)`),
+            (els.statusText.textContent = `Showing latest data from ${mostRecentDevice} (Offline)`));
+        } catch (e) {
+          console.error("loadMostRecentData", e);
+          setNoData();
+        }
+      }
+
+      async function loadHistoricalDataForDevice(deviceId) {
+        try {
+          const historyResponse = await fetch(
+            `/api/history?deviceId=${encodeURIComponent(deviceId)}&limit=1`,
+          );
+          const historyData = await historyResponse.json();
+
+          if (!historyData.timestamps || historyData.timestamps.length === 0) {
+            return void setNoData();
+          }
+
+          const latestData = {
+            distance: historyData.distance[0],
+            motion: historyData.motion[0],
+            servoPosition: historyData.servo[0],
+            serverTimestamp: historyData.timestamps[0],
+            fillStatus: historyData.fillStatus
+              ? historyData.fillStatus[0]
+              : null,
+            regressionFullness: historyData.regressionFullness
+              ? historyData.regressionFullness[0]
+              : null,
+          };
+
+          let isFull = false;
+          let fillStatus = "Unknown";
+          try {
+            const settingsResponse = await fetch("/api/settings");
+            const settings = await settingsResponse.json();
+            if (
+              latestData.distance !== null &&
+              latestData.distance <= settings.thresholdCm
+            ) {
+              isFull = true;
+            }
+            if (!latestData.fillStatus) {
+              fillStatus = calculateFillStatus(
+                latestData.distance,
+                settings.thresholdCm,
+                settings.emptyThresholdCm,
+              );
+            } else {
+              fillStatus = latestData.fillStatus;
+            }
+          } catch (e) {
+            console.warn(
+              "Could not load threshold settings for status calculation",
+              e,
+            );
+          }
+
+          latestData.isFull = isFull;
+          latestData.fillStatus = fillStatus;
+
+          ((els.distance.textContent =
+            null != latestData.distance
+              ? `${Number(latestData.distance).toFixed(1)} cm`
+              : "-- cm"),
+            (els.motion.textContent = latestData.motion ? "Detected" : "None"),
+            (els.servoPosition.textContent =
+              null != latestData.servoPosition
+                ? `${latestData.servoPosition}°`
+                : "--°"),
+            (els.fullStatus.textContent =
+              latestData.fillStatus ||
+              (latestData.isFull ? "Full" : "Not full")),
+            (els.regressionFullness.textContent =
+              latestData.regressionFullness != null
+                ? `${Number(latestData.regressionFullness).toFixed(1)} %`
+                : "-- %"),
+            (els.fullStatus.style.color =
+              latestData.fillStatus === "full" || latestData.isFull
+                ? "#dc3545"
+                : latestData.fillStatus === "partial"
+                  ? "#fd7e14"
+                  : latestData.fillStatus === "empty"
+                    ? "#28a745"
+                    : "#6c757d"),
+            (els.lastUpdateSmall.textContent = `Last update: ${latestData.serverTimestamp
+                ? new Date(latestData.serverTimestamp).toLocaleTimeString()
+                : "--"
+              } (Historical)`),
             (els.statusText.textContent = `Showing latest data from ${deviceId} (Offline)`));
         } catch (e) {
           console.error("loadHistoricalDataForDevice", e);
@@ -604,6 +608,7 @@
           const dist = h.distance || [];
           const servo = h.servo || [];
           const motion = h.motion || [];
+          const regression = h.regressionFullness || [];
 
           if (!distanceChart) {
             distanceChart = new Chart(distanceCtx, {
@@ -796,6 +801,73 @@
             motionChart.data.datasets[0].data = motion;
             motionChart.update("none");
           }
+
+          if (!regressionChart) {
+            regressionChart = new Chart(regressionCtx, {
+              type: "line",
+              data: {
+                labels,
+                datasets: [
+                  {
+                    label: "model_fullness_%",
+                    data: regression,
+                    borderColor: "#8b5cf6",
+                    backgroundColor: "rgba(139, 92, 246, 0.08)",
+                    tension: 0.1,
+                    pointRadius: 0,
+                    borderWidth: 2,
+                    fill: true,
+                  },
+                ],
+              },
+              options: {
+                animation: false,
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                  x: {
+                    grid: { color: "#e0e0e0", drawBorder: false },
+                    ticks: {
+                      color: "#757575",
+                      font: { family: "Courier New, monospace", size: 10 },
+                    },
+                  },
+                  y: {
+                    min: 0,
+                    max: 100,
+                    grid: { color: "#e0e0e0", drawBorder: false },
+                    ticks: {
+                      color: "#757575",
+                      font: { family: "Courier New, monospace", size: 10 },
+                    },
+                    title: {
+                      display: true,
+                      text: "%",
+                      color: "#757575",
+                      font: { family: "Courier New, monospace", size: 10 },
+                    },
+                  },
+                },
+                plugins: {
+                  legend: { display: false },
+                  tooltip: {
+                    backgroundColor: "#ffffff",
+                    titleColor: "#212121",
+                    bodyColor: "#212121",
+                    borderColor: "#8b5cf6",
+                    borderWidth: 1,
+                    titleFont: { family: "Courier New, monospace", size: 11 },
+                    bodyFont: { family: "Courier New, monospace", size: 11 },
+                    padding: 8,
+                  },
+                },
+              },
+            });
+          } else {
+            regressionChart.data.labels = labels;
+            regressionChart.data.datasets[0].data = regression;
+            regressionChart.update("none");
+          }
         } catch (e) {
           console.error("updateCharts", e);
         }
@@ -818,7 +890,7 @@
           if (typeof s === "number" && els.sustainInput) {
             els.sustainInput.value = String(s);
           }
-        } catch {}
+        } catch { }
       }
       function startAutoRefresh() {
         if (document.hidden) return;
@@ -840,5 +912,6 @@
       });
       window.addEventListener("beforeunload", stopAutoRefresh);
     </script>
-  </body>
+</body>
+
 </html>

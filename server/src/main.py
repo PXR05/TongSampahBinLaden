@@ -14,7 +14,8 @@ from functools import wraps
 
 from flask import Flask, jsonify, render_template, request, Response
 
-from server.src.models.fuzzy_model import compute_fullness
+from .models.fuzzy_model import compute_fullness
+from .models.regression_model import predict_fullness
 from .utils import (
     JSONLike,
     DEFAULT_THRESHOLD_CM,
@@ -365,6 +366,7 @@ def csv_hist_page(
                     "shouldActivateServo": pbool(row.get("shouldActivateServo")),
                     "isFull": pbool(row.get("isFull")),
                     "fillStatus": row.get("fillStatus", "unknown"),
+                    "regressionFullness": pfloat(row.get("regressionFullness")),
                 }
             )
     except Exception:
@@ -452,6 +454,7 @@ def mem_hist_page(
             "shouldActivateServo": p.get("shouldActivateServo"),
             "isFull": p.get("isFull"),
             "fillStatus": p.get("fillStatus", "unknown"),
+            "regressionFullness": p.get("regressionFullness"),
         }
         for p in sliced
     ]
@@ -478,7 +481,7 @@ def sensor_in():
 
     dist_val = pfloat(data.get("distance"))
     
-        # Augment device data with server-side calculations
+    # Augment device data with server-side calculations
     data["serverTimestamp"] = now
     dist_val = pfloat(data.get("distance"))
     thr = pfloat(settings.get("thresholdCm"), 5) or 5
@@ -486,10 +489,10 @@ def sensor_in():
     is_full = 1 if (dist_val is not None and dist_val <= thr) else 0
     # fill_status = calculate_fill_status(dist_val, thr, empty_thr)
     fill_status = compute_fullness(dist_val)
+    regression_fullness = predict_fullness(dist_val)
     data["isFull"] = is_full
     data["fillStatus"] = fill_status
-    # Store latest state in memory (overwrites previous)
-    device_data[device_id] = data
+    data["regressionFullness"] = regression_fullness
 
     # Prepare point for history tracking
     point: dict[str, CSVValue] = {
@@ -502,6 +505,7 @@ def sensor_in():
         "motion": 1 if data.get("motion") else 0,
         "isFull": is_full,
         "fillStatus": fill_status,
+        "regressionFullness": regression_fullness,
     }
     # Add to circular buffer (auto-discards old entries)
     device_history[device_id].append(point)
@@ -633,6 +637,7 @@ def history_api():
             "servo": [p.get("servoPosition") for p in series],
             "motion": [p.get("motion") for p in series],
             "fillStatus": [p.get("fillStatus") for p in series],
+            "regressionFullness": [p.get("regressionFullness") for p in series],
         }
     )
 

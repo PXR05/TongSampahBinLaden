@@ -1,7 +1,7 @@
 # models/fuzzy_model.py
 
 import numpy as np
-import matplotlib.pyplot as plt
+
 
 def triangular_mf(x, a, b, c):
     return max(0, min((x - a) / (b - a) if b - a != 0 else 1, (c - x) / (c - b) if c - b != 0 else 1))
@@ -55,16 +55,4 @@ def validate_fuzzy_system():
     distances = np.arange(0, 21, 1) # Plot from 0cm to 20cm
     fullness_outputs = [compute_fullness(d) for d in distances]
 
-    plt.figure(figsize=(10, 6))
-    plt.plot(distances, fullness_outputs, label='Fuzzy Logic Output')
-    plt.title('Fuzzy Logic System Behavior (20cm Box)')
-    plt.xlabel('Distance from Sensor (cm)')
-    plt.ylabel('Calculated Fullness (%)')
-    plt.grid(True)
-    plt.gca().invert_xaxis()
-    plt.legend()
     
-    output_filename = 'fuzzy_logic_behavior_20cm.png'
-    plt.savefig(output_filename)
-    
-    print(f"  - Behavior plot saved to '{output_filename}'")
