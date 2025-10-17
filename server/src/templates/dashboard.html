@@ -58,7 +58,7 @@
         </div>
       </div>
     </div>
-    <div class="grid mt16">
+    <div class="grid mt16" style="grid-template-columns: repeat(6, 1fr); gap: 1rem;">
       <div class="stat">
         <div class="label">distance</div>
         <div class="value" id="distance">--</div>
@@ -76,12 +76,18 @@
         <div class="value" id="regressionFullness">--</div>
       </div>
       <div class="stat">
+        <div class="label">Time to Full</div>
+        <div class="value" id="timeToFull">--</div>
+      </div>
+      <div class="stat">
         <div class="label">Status</div>
         <div class="value">
           <span id="fillStatus" class="status-indicator">--</span>
         </div>
       </div>
-      <div class="mt16">
+    </div>
+    <div class="grid mt16" style="grid-template-columns: repeat(2, 1fr); gap: 1rem;">
+      <div class="chart-container">
         <div class="sectionHeader">
           <div>distance_history</div>
           <a id="moreDistance" href="#" class="muted no-underline">[more]</a>
@@ -90,25 +96,25 @@
           <canvas id="distanceChart"></canvas>
         </div>
       </div>
-      <div class="mt16">
+      <div class="chart-container">
         <div class="sectionHeader">
           <div>servo_history</div>
           <a id="moreServo" href="#" class="muted no-underline">[more]</a>
         </div>
-        <div style="height: 180px; position: relative">
+        <div style="height: 200px; position: relative">
           <canvas id="servoChart"></canvas>
         </div>
       </div>
-      <div class="mt16">
+      <div class="chart-container">
         <div class="sectionHeader">
           <div>motion_history</div>
           <a id="moreMotion" href="#" class="muted no-underline">[more]</a>
         </div>
-        <div style="height: 150px; position: relative">
+        <div style="height: 200px; position: relative">
           <canvas id="motionChart"></canvas>
         </div>
       </div>
-      <div class="mt16">
+      <div class="chart-container">
         <div class="sectionHeader">
           <div>model_fullness_history</div>
           <a id="moreModel" href="#" class="muted no-underline">[more]</a>
@@ -117,801 +123,835 @@
           <canvas id="regressionChart"></canvas>
         </div>
       </div>
-      <div class="muted" id="statusText">// waiting for data...</div>
     </div>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-    <script>
-      let selectedDevice = "",
-        refreshHandle,
-        distanceChart,
-        servoChart,
-        motionChart,
-        regressionChart,
-        els,
-        distanceCtx,
-        servoCtx,
-        motionCtx,
-        regressionCtx;
+    <div class="muted" id="statusText">// waiting for data...</div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script>
+    let selectedDevice = "",
+      refreshHandle,
+      distanceChart,
+      servoChart,
+      motionChart,
+      regressionChart,
+      els,
+      distanceCtx,
+      servoCtx,
+      motionCtx,
+      regressionCtx;
 
-      function calculateFillStatus(distance, threshold, emptyThreshold) {
-        if (distance === null || distance === undefined) {
-          return "Unknown";
-        }
+    function formatHours(hours) {
+      if (hours === null || hours === undefined) {
+        return "--";
+      }
+      if (hours === "inf") {
+        return "∞ (not filling)";
+      }
+      if (hours < 0) {
+        return "Overdue";
+      }
+      if (hours < 1) {
+        const minutes = Math.round(hours * 60);
+        return `~${minutes} min`;
+      }
+      return `~${hours.toFixed(1)} hr`;
+    }
 
-        const partialThreshold = threshold * 1.33;
-
-        if (distance <= threshold) {
-          return "Full";
-        } else if (distance <= partialThreshold) {
-          return "Partial";
-        } else if (distance >= emptyThreshold) {
-          return "Empty";
-        } else {
-          return "Partial";
-        }
+    function calculateFillStatus(distance, threshold, emptyThreshold) {
+      if (distance === null || distance === undefined) {
+        return "Unknown";
       }
 
-      document.addEventListener("DOMContentLoaded", () => {
-        const $ = (id) => document.getElementById(id);
-        els = {
-          deviceSelect: $("deviceSelect"),
-          lastUpdateSmall: $("lastUpdateSmall"),
-          distance: $("distance"),
-          motion: $("motion"),
-          servoPosition: $("servoPosition"),
-          fullStatus: $("fullStatus"),
-          regressionFullness: $("regressionFullness"),
-          statusText: $("statusText"),
-          thresholdInput: $("thresholdInput"),
-          emptyThresholdInput: $("emptyThresholdInput"),
-          sustainInput: $("sustainInput"),
-          angleSlider: $("angleSlider"),
-          angleValue: $("angleValue"),
-        };
+      const partialThreshold = threshold * 1.33;
 
-        distanceCtx = $("distanceChart").getContext("2d");
-        servoCtx = $("servoChart").getContext("2d");
-        motionCtx = $("motionChart").getContext("2d");
-        regressionCtx = $("regressionChart").getContext("2d");
+      if (distance <= threshold) {
+        return "Full";
+      } else if (distance <= partialThreshold) {
+        return "Partial";
+      } else if (distance >= emptyThreshold) {
+        return "Empty";
+      } else {
+        return "Partial";
+      }
+    }
 
-        loadDevices();
-        startAutoRefresh();
-        els.deviceSelect?.addEventListener("change", (e) => {
-          selectedDevice = e.target.value;
-          updateDashboard();
-          updateCharts();
-        });
+    document.addEventListener("DOMContentLoaded", () => {
+      const $ = (id) => document.getElementById(id);
+      els = {
+        deviceSelect: $("deviceSelect"),
+        lastUpdateSmall: $("lastUpdateSmall"),
+        distance: $("distance"),
+        motion: $("motion"),
+        servoPosition: $("servoPosition"),
+        fillStatus: $("fillStatus"),
+        regressionFullness: $("regressionFullness"),
+        timeToFull: $("timeToFull"),
+        statusText: $("statusText"),
+        thresholdInput: $("thresholdInput"),
+        emptyThresholdInput: $("emptyThresholdInput"),
+        sustainInput: $("sustainInput"),
+        angleSlider: $("angleSlider"),
+        angleValue: $("angleValue"),
+      };
 
-        const slider = els.angleSlider;
-        const angleValue = els.angleValue;
-        slider?.addEventListener("input", () => {
-          angleValue.textContent = `${slider.value}°`;
-        });
-        document.getElementById("btnAuto")?.addEventListener("click", () => {
-          sendCommand({ action: "auto" });
-        });
-        document.getElementById("btnOpen")?.addEventListener("click", () => {
-          sendCommand({ action: "setAngle", targetPosition: 90 });
-        });
-        document.getElementById("btnClose")?.addEventListener("click", () => {
-          sendCommand({ action: "setAngle", targetPosition: 0 });
-        });
-        document
-          .getElementById("btnSendAngle")
-          ?.addEventListener("click", () => {
-            const v = parseInt(slider.value, 10);
-            sendCommand({ action: "setAngle", targetPosition: v });
-          });
+      distanceCtx = $("distanceChart").getContext("2d");
+      servoCtx = $("servoChart").getContext("2d");
+      motionCtx = $("motionChart").getContext("2d");
+      regressionCtx = $("regressionChart").getContext("2d");
 
-        loadThreshold();
-        document
-          .getElementById("btnSaveThreshold")
-          ?.addEventListener("click", async () => {
-            const val = parseFloat(els.thresholdInput.value);
-            const emptyVal = parseFloat(els.emptyThresholdInput.value);
-            if (
-              Number.isNaN(val) ||
-              val < 0 ||
-              Number.isNaN(emptyVal) ||
-              emptyVal < 0
-            )
-              return;
-            try {
-              const res = await fetch("/api/settings", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                  thresholdCm: val,
-                  emptyThresholdCm: emptyVal,
-                  alertSustainSec: parseFloat(els.sustainInput.value),
-                }),
-              });
-              if (!res.ok) throw new Error("HTTP " + res.status);
-              const j = await res.json();
-              document.getElementById("statusText").textContent =
-                `Alert: ≤ ${j.thresholdCm} cm, ≥ ${j.emptyThresholdCm} cm for ${j.alertSustainSec}s`;
-            } catch (e) {
-              els.statusText.textContent = "Failed to save threshold";
-            }
-          });
-
-        const bindMore = (id) => {
-          const el = document.getElementById(id);
-          if (!el) return;
-          el.addEventListener("click", (e) => {
-            e.preventDefault();
-            const dev = selectedDevice || "";
-            const url = dev
-              ? `/history?deviceId=${encodeURIComponent(dev)}`
-              : "/history";
-            window.location.href = url;
-          });
-        };
-        bindMore("moreDistance");
-        bindMore("moreServo");
-        bindMore("moreMotion");
-        bindMore("moreModel");
+      loadDevices();
+      updateTimeToFull();
+      startAutoRefresh();
+      els.deviceSelect?.addEventListener("change", (e) => {
+        selectedDevice = e.target.value;
+        updateDashboard();
+        updateCharts();
       });
 
-      async function sendCommand(cmd) {
-        try {
-          if (!selectedDevice) {
-            const dd = await (await fetch("/api/device-data")).json();
-            const ids = Object.keys(dd);
-            if (!ids.length) {
-              els.statusText.textContent = "No devices available for commands";
-              return;
-            }
-            selectedDevice = ids[0];
-          }
+      const slider = els.angleSlider;
+      const angleValue = els.angleValue;
+      slider?.addEventListener("input", () => {
+        angleValue.textContent = `${slider.value}°`;
+      });
+      document.getElementById("btnAuto")?.addEventListener("click", () => {
+        sendCommand({ action: "auto" });
+      });
+      document.getElementById("btnOpen")?.addEventListener("click", () => {
+        sendCommand({ action: "setAngle", targetPosition: 90 });
+      });
+      document.getElementById("btnClose")?.addEventListener("click", () => {
+        sendCommand({ action: "setAngle", targetPosition: 0 });
+      });
+      document
+        .getElementById("btnSendAngle")
+        ?.addEventListener("click", () => {
+          const v = parseInt(slider.value, 10);
+          sendCommand({ action: "setAngle", targetPosition: v });
+        });
 
+      loadThreshold();
+      document
+        .getElementById("btnSaveThreshold")
+        ?.addEventListener("click", async () => {
+          const val = parseFloat(els.thresholdInput.value);
+          const emptyVal = parseFloat(els.emptyThresholdInput.value);
+          if (
+            Number.isNaN(val) ||
+            val < 0 ||
+            Number.isNaN(emptyVal) ||
+            emptyVal < 0
+          )
+            return;
+          try {
+            const res = await fetch("/api/settings", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                thresholdCm: val,
+                emptyThresholdCm: emptyVal,
+                alertSustainSec: parseFloat(els.sustainInput.value),
+              }),
+            });
+            if (!res.ok) throw new Error("HTTP " + res.status);
+            const j = await res.json();
+            document.getElementById("statusText").textContent =
+              `Alert: ≤ ${j.thresholdCm} cm, ≥ ${j.emptyThresholdCm} cm for ${j.alertSustainSec}s`;
+          } catch (e) {
+            els.statusText.textContent = "Failed to save threshold";
+          }
+        });
+
+      const bindMore = (id) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener("click", (e) => {
+          e.preventDefault();
+          const dev = selectedDevice || "";
+          const url = dev
+            ? `/history?deviceId=${encodeURIComponent(dev)}`
+            : "/history";
+          window.location.href = url;
+        });
+      };
+      bindMore("moreDistance");
+      bindMore("moreServo");
+      bindMore("moreMotion");
+      bindMore("moreModel");
+    });
+
+    async function sendCommand(cmd) {
+      try {
+        if (!selectedDevice) {
           const dd = await (await fetch("/api/device-data")).json();
-          if (!dd[selectedDevice]) {
-            els.statusText.textContent = `Cannot send command: ${selectedDevice} is offline`;
+          const ids = Object.keys(dd);
+          if (!ids.length) {
+            els.statusText.textContent = "No devices available for commands";
             return;
           }
-
-          const body = { deviceId: selectedDevice, ...cmd };
-          const res = await fetch("/api/command", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(body),
-          });
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          const j = await res.json();
-          els.statusText.textContent =
-            j.action === "auto"
-              ? "Auto mode set"
-              : `Command sent: ${j.targetPosition ?? "-"}°`;
-        } catch (e) {
-          console.error("sendCommand", e);
-          els.statusText.textContent = "Failed to send command";
+          selectedDevice = ids[0];
         }
-      }
-      async function loadDevices() {
-        try {
-          const e = await fetch("/api/device-data"),
-            t = await e.json(),
-            n = Object.keys(t),
-            a = document.getElementById("deviceSelect");
 
-          let allDevices = n;
-          if (n.length === 0) {
+        const dd = await (await fetch("/api/device-data")).json();
+        if (!dd[selectedDevice]) {
+          els.statusText.textContent = `Cannot send command: ${selectedDevice} is offline`;
+          return;
+        }
+
+        const body = { deviceId: selectedDevice, ...cmd };
+        const res = await fetch("/api/command", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const j = await res.json();
+        els.statusText.textContent =
+          j.action === "auto"
+            ? "Auto mode set"
+            : `Command sent: ${j.targetPosition ?? "-"}°`;
+      } catch (e) {
+        console.error("sendCommand", e);
+        els.statusText.textContent = "Failed to send command";
+      }
+    }
+    async function loadDevices() {
+      try {
+        const e = await fetch("/api/device-data"),
+          t = await e.json(),
+          n = Object.keys(t),
+          a = document.getElementById("deviceSelect");
+
+        let allDevices = n;
+        if (n.length === 0) {
+          try {
+            const devicesResponse = await fetch("/api/devices");
+            const devicesData = await devicesResponse.json();
+            allDevices = devicesData.deviceIds || [];
+          } catch (err) {
+            console.warn("Could not load historical devices", err);
+          }
+        }
+
+        ((a.innerHTML =
+          '<option value="">Select...</option>' +
+          allDevices
+            .map((e) => `<option value="${e}">${e}</option>`)
+            .join("")),
+          !selectedDevice &&
+          allDevices.length &&
+          ((selectedDevice = allDevices[0]), (a.value = selectedDevice)),
+          updateDashboard());
+      } catch (e) {
+        console.error("loadDevices", e);
+      }
+    }
+    async function updateDashboard() {
+      try {
+        const e = await fetch("/api/device-data"),
+          t = await e.json(),
+          n = selectedDevice ? t[selectedDevice] : t[Object.keys(t)[0]];
+        if (!n) {
+          if (selectedDevice) {
+            await loadHistoricalDataForDevice(selectedDevice);
+          } else {
+            await loadMostRecentData();
+          }
+          return;
+        }
+        ((els.distance.textContent =
+          null != n.distance
+            ? `${Number(n.distance).toFixed(1)} cm`
+            : "-- cm"),
+          (els.motion.textContent = n.motion ? "Detected" : "None"),
+          (els.servoPosition.textContent =
+            null != n.servoPosition ? `${n.servoPosition}°` : "--°"),
+          (els.fillStatus.textContent = n.fillStatus
+            ? String(n.fillStatus).charAt(0).toUpperCase() + String(n.fillStatus).slice(1)
+            : n.isFull
+              ? "Full"
+              : "Not full"),
+          (els.regressionFullness.textContent =
+            n.regressionFullness != null
+              ? `${Number(n.regressionFullness).toFixed(1)} %`
+              : "-- %"),
+          (els.fillStatus.style.color =
+            n.fillStatus === "full" || n.isFull
+              ? "#dc3545"
+              : n.fillStatus === "partial"
+                ? "#fd7e14"
+                : n.fillStatus === "empty"
+                  ? "#28a745"
+                  : "#6c757d"),
+          (els.lastUpdateSmall.textContent = `Last update: ${n.serverTimestamp
+            ? new Date(n.serverTimestamp).toLocaleTimeString()
+            : "--"
+            }`),
+          (els.statusText.textContent = "Connected"));
+        // const statusEl = document.getElementById('fillStatus');
+        // const status = data.fillStatus || 'unknown';
+        // statusEl.textContent = status.toUpperCase();
+        // statusEl.className = `status-indicator status-${status}`;
+
+      } catch (e) {
+        (console.error("updateDashboard", e),
+          (els.statusText.textContent = "Error fetching data"));
+      }
+    }
+    function setNoData() {
+      ((els.distance.textContent = "-- cm"),
+        (els.motion.textContent = "--"),
+        (els.servoPosition.textContent = "--°"),
+        (els.fillStatus.textContent = "--"),
+        (els.regressionFullness.textContent = "-- %"),
+        (els.timeToFull.textContent = "--"),
+        (els.fillStatus.style.color = "#6c757d"),
+        (els.lastUpdateSmall.textContent = "Last update: --"),
+        (els.statusText.textContent = "No devices sending data"));
+    }
+
+    async function loadMostRecentData() {
+      try {
+        const devicesResponse = await fetch("/api/devices");
+        const devicesData = await devicesResponse.json();
+        const deviceIds = devicesData.deviceIds;
+
+        if (!deviceIds || deviceIds.length === 0) {
+          return void setNoData();
+        }
+
+        const mostRecentDevice = deviceIds[0];
+
+        const historyResponse = await fetch(
+          `/api/history?deviceId=${encodeURIComponent(
+            mostRecentDevice,
+          )}&limit=1`,
+        );
+        const historyData = await historyResponse.json();
+
+        if (!historyData.timestamps || historyData.timestamps.length === 0) {
+          return void setNoData();
+        }
+
+        const latestData = {
+          distance: historyData.distance[0],
+          motion: historyData.motion[0],
+          servoPosition: historyData.servo[0],
+          serverTimestamp: historyData.timestamps[0],
+          fillStatus: historyData.fillStatus
+            ? historyData.fillStatus[0]
+            : null,
+          regressionFullness: historyData.regressionFullness
+            ? historyData.regressionFullness[0]
+            : null,
+        };
+
+        let isFull = false;
+        let fillStatus = "Unknown";
+        try {
+          const settingsResponse = await fetch("/api/settings");
+          const settings = await settingsResponse.json();
+          if (
+            latestData.distance !== null &&
+            latestData.distance <= settings.thresholdCm
+          ) {
+            isFull = true;
+          }
+          if (!latestData.fillStatus) {
+            fillStatus = calculateFillStatus(
+              latestData.distance,
+              settings.thresholdCm,
+              settings.emptyThresholdCm,
+            );
+          } else {
+            fillStatus = latestData.fillStatus;
+          }
+        } catch (e) {
+          console.warn(
+            "Could not load threshold settings for status calculation",
+            e,
+          );
+        }
+
+        latestData.isFull = isFull;
+        latestData.fillStatus = fillStatus;
+
+        ((els.distance.textContent =
+          null != latestData.distance
+            ? `${Number(latestData.distance).toFixed(1)} cm`
+            : "-- cm"),
+          (els.motion.textContent = latestData.motion ? "Detected" : "None"),
+          (els.servoPosition.textContent =
+            null != latestData.servoPosition
+              ? `${latestData.servoPosition}°`
+              : "--°"),
+          (els.fillStatus.textContent =
+            latestData.fillStatus ||
+            (latestData.isFull ? "Full" : "Not full")),
+          (els.regressionFullness.textContent =
+            latestData.regressionFullness != null
+              ? `${Number(latestData.regressionFullness).toFixed(1)} %`
+              : "-- %"),
+          (els.fillStatus.style.color =
+            latestData.fillStatus === "full" || latestData.isFull
+              ? "#dc3545"
+              : latestData.fillStatus === "partial"
+                ? "#fd7e14"
+                : latestData.fillStatus === "empty"
+                  ? "#28a745"
+                  : "#6c757d"),
+          (els.lastUpdateSmall.textContent = `Last update: ${latestData.serverTimestamp
+            ? new Date(latestData.serverTimestamp).toLocaleTimeString()
+            : "--"
+            } (Historical)`),
+          (els.statusText.textContent = `Showing latest data from ${mostRecentDevice} (Offline)`));
+      } catch (e) {
+        console.error("loadMostRecentData", e);
+        setNoData();
+      }
+    }
+
+    async function loadHistoricalDataForDevice(deviceId) {
+      try {
+        const historyResponse = await fetch(
+          `/api/history?deviceId=${encodeURIComponent(deviceId)}&limit=1`,
+        );
+        const historyData = await historyResponse.json();
+
+        if (!historyData.timestamps || historyData.timestamps.length === 0) {
+          return void setNoData();
+        }
+
+        const latestData = {
+          distance: historyData.distance[0],
+          motion: historyData.motion[0],
+          servoPosition: historyData.servo[0],
+          serverTimestamp: historyData.timestamps[0],
+          fillStatus: historyData.fillStatus
+            ? historyData.fillStatus[0]
+            : null,
+          regressionFullness: historyData.regressionFullness
+            ? historyData.regressionFullness[0]
+            : null,
+        };
+
+        let isFull = false;
+        let fillStatus = "Unknown";
+        try {
+          const settingsResponse = await fetch("/api/settings");
+          const settings = await settingsResponse.json();
+          if (
+            latestData.distance !== null &&
+            latestData.distance <= settings.thresholdCm
+          ) {
+            isFull = true;
+          }
+          if (!latestData.fillStatus) {
+            fillStatus = calculateFillStatus(
+              latestData.distance,
+              settings.thresholdCm,
+              settings.emptyThresholdCm,
+            );
+          } else {
+            fillStatus = latestData.fillStatus;
+          }
+        } catch (e) {
+          console.warn(
+            "Could not load threshold settings for status calculation",
+            e,
+          );
+        }
+
+        latestData.isFull = isFull;
+        latestData.fillStatus = fillStatus;
+
+        ((els.distance.textContent =
+          null != latestData.distance
+            ? `${Number(latestData.distance).toFixed(1)} cm`
+            : "-- cm"),
+          (els.motion.textContent = latestData.motion ? "Detected" : "None"),
+          (els.servoPosition.textContent =
+            null != latestData.servoPosition
+              ? `${latestData.servoPosition}°`
+              : "--°"),
+          (els.fillStatus.textContent =
+            latestData.fillStatus ||
+            (latestData.isFull ? "Full" : "Not full")),
+          (els.regressionFullness.textContent =
+            latestData.regressionFullness != null
+              ? `${Number(latestData.regressionFullness).toFixed(1)} %`
+              : "-- %"),
+          (els.fillStatus.style.color =
+            latestData.fillStatus === "full" || latestData.isFull
+              ? "#dc3545"
+              : latestData.fillStatus === "partial"
+                ? "#fd7e14"
+                : latestData.fillStatus === "empty"
+                  ? "#28a745"
+                  : "#6c757d"),
+          (els.lastUpdateSmall.textContent = `Last update: ${latestData.serverTimestamp
+            ? new Date(latestData.serverTimestamp).toLocaleTimeString()
+            : "--"
+            } (Historical)`),
+          (els.statusText.textContent = `Showing latest data from ${deviceId} (Offline)`));
+      } catch (e) {
+        console.error("loadHistoricalDataForDevice", e);
+        setNoData();
+      }
+    }
+    async function updateCharts() {
+      try {
+        if (!selectedDevice) {
+          const dd = await (await fetch("/api/device-data")).json();
+          const ids = Object.keys(dd);
+          if (!ids.length) {
             try {
               const devicesResponse = await fetch("/api/devices");
               const devicesData = await devicesResponse.json();
-              allDevices = devicesData.deviceIds || [];
+              const historicalIds = devicesData.deviceIds || [];
+              if (!historicalIds.length) return;
+              selectedDevice = historicalIds[0];
             } catch (err) {
-              console.warn("Could not load historical devices", err);
-            }
-          }
-
-          ((a.innerHTML =
-            '<option value="">Select...</option>' +
-            allDevices
-              .map((e) => `<option value="${e}">${e}</option>`)
-              .join("")),
-            !selectedDevice &&
-            allDevices.length &&
-            ((selectedDevice = allDevices[0]), (a.value = selectedDevice)),
-            updateDashboard());
-        } catch (e) {
-          console.error("loadDevices", e);
-        }
-      }
-      async function updateDashboard() {
-        try {
-          const e = await fetch("/api/device-data"),
-            t = await e.json(),
-            n = selectedDevice ? t[selectedDevice] : t[Object.keys(t)[0]];
-          if (!n) {
-            if (selectedDevice) {
-              await loadHistoricalDataForDevice(selectedDevice);
-            } else {
-              await loadMostRecentData();
-            }
-            return;
-          }
-          ((els.distance.textContent =
-            null != n.distance
-              ? `${Number(n.distance).toFixed(1)} cm`
-              : "-- cm"),
-            (els.motion.textContent = n.motion ? "Detected" : "None"),
-            (els.servoPosition.textContent =
-              null != n.servoPosition ? `${n.servoPosition}°` : "--°"),
-            (els.fullStatus.textContent = n.fillStatus
-              ? n.fillStatus.charAt(0).toUpperCase() + n.fillStatus.slice(1)
-              : n.isFull
-                ? "Full"
-                : "Not full"),
-            (els.regressionFullness.textContent =
-              n.regressionFullness != null
-                ? `${Number(n.regressionFullness).toFixed(1)} %`
-                : "-- %"),
-            (els.fullStatus.style.color =
-              n.fillStatus === "full" || n.isFull
-                ? "#dc3545"
-                : n.fillStatus === "partial"
-                  ? "#fd7e14"
-                  : n.fillStatus === "empty"
-                    ? "#28a745"
-                    : "#6c757d"),
-            (els.lastUpdateSmall.textContent = `Last update: ${n.serverTimestamp
-                ? new Date(n.serverTimestamp).toLocaleTimeString()
-                : "--"
-              }`),
-            (els.statusText.textContent = "Connected"));
-          const statusEl = document.getElementById('fillStatus');
-          const status = data.fillStatus || 'unknown';
-          statusEl.textContent = status.toUpperCase();
-          statusEl.className = `status-indicator status-${status}`;
-
-        } catch (e) {
-          (console.error("updateDashboard", e),
-            (els.statusText.textContent = "Error fetching data"));
-        }
-      }
-      function setNoData() {
-        ((els.distance.textContent = "-- cm"),
-          (els.motion.textContent = "--"),
-          (els.servoPosition.textContent = "--°"),
-          (els.fullStatus.textContent = "--"),
-          (els.regressionFullness.textContent = "-- %"),
-          (els.fullStatus.style.color = "#6c757d"),
-          (els.lastUpdateSmall.textContent = "Last update: --"),
-          (els.statusText.textContent = "No devices sending data"));
-      }
-
-      async function loadMostRecentData() {
-        try {
-          const devicesResponse = await fetch("/api/devices");
-          const devicesData = await devicesResponse.json();
-          const deviceIds = devicesData.deviceIds;
-
-          if (!deviceIds || deviceIds.length === 0) {
-            return void setNoData();
-          }
-
-          const mostRecentDevice = deviceIds[0];
-
-          const historyResponse = await fetch(
-            `/api/history?deviceId=${encodeURIComponent(
-              mostRecentDevice,
-            )}&limit=1`,
-          );
-          const historyData = await historyResponse.json();
-
-          if (!historyData.timestamps || historyData.timestamps.length === 0) {
-            return void setNoData();
-          }
-
-          const latestData = {
-            distance: historyData.distance[0],
-            motion: historyData.motion[0],
-            servoPosition: historyData.servo[0],
-            serverTimestamp: historyData.timestamps[0],
-            fillStatus: historyData.fillStatus
-              ? historyData.fillStatus[0]
-              : null,
-            regressionFullness: historyData.regressionFullness
-              ? historyData.regressionFullness[0]
-              : null,
-          };
-
-          let isFull = false;
-          let fillStatus = "Unknown";
-          try {
-            const settingsResponse = await fetch("/api/settings");
-            const settings = await settingsResponse.json();
-            if (
-              latestData.distance !== null &&
-              latestData.distance <= settings.thresholdCm
-            ) {
-              isFull = true;
-            }
-            if (!latestData.fillStatus) {
-              fillStatus = calculateFillStatus(
-                latestData.distance,
-                settings.thresholdCm,
-                settings.emptyThresholdCm,
+              console.warn(
+                "Could not load historical devices for charts",
+                err,
               );
-            } else {
-              fillStatus = latestData.fillStatus;
+              return;
             }
-          } catch (e) {
-            console.warn(
-              "Could not load threshold settings for status calculation",
-              e,
-            );
-          }
-
-          latestData.isFull = isFull;
-          latestData.fillStatus = fillStatus;
-
-          ((els.distance.textContent =
-            null != latestData.distance
-              ? `${Number(latestData.distance).toFixed(1)} cm`
-              : "-- cm"),
-            (els.motion.textContent = latestData.motion ? "Detected" : "None"),
-            (els.servoPosition.textContent =
-              null != latestData.servoPosition
-                ? `${latestData.servoPosition}°`
-                : "--°"),
-            (els.fullStatus.textContent =
-              latestData.fillStatus ||
-              (latestData.isFull ? "Full" : "Not full")),
-            (els.regressionFullness.textContent =
-              latestData.regressionFullness != null
-                ? `${Number(latestData.regressionFullness).toFixed(1)} %`
-                : "-- %"),
-            (els.fullStatus.style.color =
-              latestData.fillStatus === "full" || latestData.isFull
-                ? "#dc3545"
-                : latestData.fillStatus === "partial"
-                  ? "#fd7e14"
-                  : latestData.fillStatus === "empty"
-                    ? "#28a745"
-                    : "#6c757d"),
-            (els.lastUpdateSmall.textContent = `Last update: ${latestData.serverTimestamp
-                ? new Date(latestData.serverTimestamp).toLocaleTimeString()
-                : "--"
-              } (Historical)`),
-            (els.statusText.textContent = `Showing latest data from ${mostRecentDevice} (Offline)`));
-        } catch (e) {
-          console.error("loadMostRecentData", e);
-          setNoData();
-        }
-      }
-
-      async function loadHistoricalDataForDevice(deviceId) {
-        try {
-          const historyResponse = await fetch(
-            `/api/history?deviceId=${encodeURIComponent(deviceId)}&limit=1`,
-          );
-          const historyData = await historyResponse.json();
-
-          if (!historyData.timestamps || historyData.timestamps.length === 0) {
-            return void setNoData();
-          }
-
-          const latestData = {
-            distance: historyData.distance[0],
-            motion: historyData.motion[0],
-            servoPosition: historyData.servo[0],
-            serverTimestamp: historyData.timestamps[0],
-            fillStatus: historyData.fillStatus
-              ? historyData.fillStatus[0]
-              : null,
-            regressionFullness: historyData.regressionFullness
-              ? historyData.regressionFullness[0]
-              : null,
-          };
-
-          let isFull = false;
-          let fillStatus = "Unknown";
-          try {
-            const settingsResponse = await fetch("/api/settings");
-            const settings = await settingsResponse.json();
-            if (
-              latestData.distance !== null &&
-              latestData.distance <= settings.thresholdCm
-            ) {
-              isFull = true;
-            }
-            if (!latestData.fillStatus) {
-              fillStatus = calculateFillStatus(
-                latestData.distance,
-                settings.thresholdCm,
-                settings.emptyThresholdCm,
-              );
-            } else {
-              fillStatus = latestData.fillStatus;
-            }
-          } catch (e) {
-            console.warn(
-              "Could not load threshold settings for status calculation",
-              e,
-            );
-          }
-
-          latestData.isFull = isFull;
-          latestData.fillStatus = fillStatus;
-
-          ((els.distance.textContent =
-            null != latestData.distance
-              ? `${Number(latestData.distance).toFixed(1)} cm`
-              : "-- cm"),
-            (els.motion.textContent = latestData.motion ? "Detected" : "None"),
-            (els.servoPosition.textContent =
-              null != latestData.servoPosition
-                ? `${latestData.servoPosition}°`
-                : "--°"),
-            (els.fullStatus.textContent =
-              latestData.fillStatus ||
-              (latestData.isFull ? "Full" : "Not full")),
-            (els.regressionFullness.textContent =
-              latestData.regressionFullness != null
-                ? `${Number(latestData.regressionFullness).toFixed(1)} %`
-                : "-- %"),
-            (els.fullStatus.style.color =
-              latestData.fillStatus === "full" || latestData.isFull
-                ? "#dc3545"
-                : latestData.fillStatus === "partial"
-                  ? "#fd7e14"
-                  : latestData.fillStatus === "empty"
-                    ? "#28a745"
-                    : "#6c757d"),
-            (els.lastUpdateSmall.textContent = `Last update: ${latestData.serverTimestamp
-                ? new Date(latestData.serverTimestamp).toLocaleTimeString()
-                : "--"
-              } (Historical)`),
-            (els.statusText.textContent = `Showing latest data from ${deviceId} (Offline)`));
-        } catch (e) {
-          console.error("loadHistoricalDataForDevice", e);
-          setNoData();
-        }
-      }
-      async function updateCharts() {
-        try {
-          if (!selectedDevice) {
-            const dd = await (await fetch("/api/device-data")).json();
-            const ids = Object.keys(dd);
-            if (!ids.length) {
-              try {
-                const devicesResponse = await fetch("/api/devices");
-                const devicesData = await devicesResponse.json();
-                const historicalIds = devicesData.deviceIds || [];
-                if (!historicalIds.length) return;
-                selectedDevice = historicalIds[0];
-              } catch (err) {
-                console.warn(
-                  "Could not load historical devices for charts",
-                  err,
-                );
-                return;
-              }
-            } else {
-              selectedDevice = ids[0];
-            }
-          }
-          const res = await fetch(
-            `/api/history?deviceId=${encodeURIComponent(
-              selectedDevice,
-            )}&limit=100`,
-          );
-          const h = await res.json();
-          if (!h || !h.timestamps) return;
-
-          const labels = h.timestamps.map((t) =>
-            new Date(t).toLocaleTimeString(),
-          );
-          const dist = h.distance || [];
-          const servo = h.servo || [];
-          const motion = h.motion || [];
-          const regression = h.regressionFullness || [];
-
-          if (!distanceChart) {
-            distanceChart = new Chart(distanceCtx, {
-              type: "line",
-              data: {
-                labels,
-                datasets: [
-                  {
-                    label: "distance_cm",
-                    data: dist,
-                    borderColor: "#2563eb",
-                    backgroundColor: "rgba(37, 99, 235, 0.08)",
-                    tension: 0.1,
-                    pointRadius: 0,
-                    borderWidth: 2,
-                    fill: true,
-                  },
-                ],
-              },
-              options: {
-                animation: false,
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                  x: {
-                    grid: { color: "#e0e0e0", drawBorder: false },
-                    ticks: {
-                      color: "#757575",
-                      font: { family: "Courier New, monospace", size: 10 },
-                    },
-                  },
-                  y: {
-                    grid: { color: "#e0e0e0", drawBorder: false },
-                    ticks: {
-                      color: "#757575",
-                      font: { family: "Courier New, monospace", size: 10 },
-                    },
-                    title: {
-                      display: true,
-                      text: "cm",
-                      color: "#757575",
-                      font: { family: "Courier New, monospace", size: 10 },
-                    },
-                  },
-                },
-                plugins: {
-                  legend: { display: false },
-                  tooltip: {
-                    backgroundColor: "#ffffff",
-                    titleColor: "#212121",
-                    bodyColor: "#212121",
-                    borderColor: "#2563eb",
-                    borderWidth: 1,
-                    titleFont: { family: "Courier New, monospace", size: 11 },
-                    bodyFont: { family: "Courier New, monospace", size: 11 },
-                    padding: 8,
-                  },
-                },
-              },
-            });
           } else {
-            distanceChart.data.labels = labels;
-            distanceChart.data.datasets[0].data = dist;
-            distanceChart.update("none");
+            selectedDevice = ids[0];
           }
-
-          if (!servoChart) {
-            servoChart = new Chart(servoCtx, {
-              type: "line",
-              data: {
-                labels,
-                datasets: [
-                  {
-                    label: "servo_degrees",
-                    data: servo,
-                    borderColor: "#f59e0b",
-                    backgroundColor: "rgba(245, 158, 11, 0.08)",
-                    tension: 0.1,
-                    pointRadius: 0,
-                    borderWidth: 2,
-                    fill: true,
-                  },
-                ],
-              },
-              options: {
-                animation: false,
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                  x: {
-                    grid: { color: "#e0e0e0", drawBorder: false },
-                    ticks: {
-                      color: "#757575",
-                      font: { family: "Courier New, monospace", size: 10 },
-                    },
-                  },
-                  y: {
-                    grid: { color: "#e0e0e0", drawBorder: false },
-                    ticks: {
-                      color: "#757575",
-                      font: { family: "Courier New, monospace", size: 10 },
-                    },
-                    title: {
-                      display: true,
-                      text: "degrees",
-                      color: "#757575",
-                      font: { family: "Courier New, monospace", size: 10 },
-                    },
-                  },
-                },
-                plugins: {
-                  legend: { display: false },
-                  tooltip: {
-                    backgroundColor: "#ffffff",
-                    titleColor: "#212121",
-                    bodyColor: "#212121",
-                    borderColor: "#f59e0b",
-                    borderWidth: 1,
-                    titleFont: { family: "Courier New, monospace", size: 11 },
-                    bodyFont: { family: "Courier New, monospace", size: 11 },
-                    padding: 8,
-                  },
-                },
-              },
-            });
-          } else {
-            servoChart.data.labels = labels;
-            servoChart.data.datasets[0].data = servo;
-            servoChart.update("none");
-          }
-
-          if (!motionChart) {
-            motionChart = new Chart(motionCtx, {
-              type: "line",
-              data: {
-                labels,
-                datasets: [
-                  {
-                    label: "motion_detected",
-                    data: motion,
-                    borderColor: "#10b981",
-                    backgroundColor: "rgba(16, 185, 129, 0.08)",
-                    stepped: true,
-                    pointRadius: 0,
-                    borderWidth: 2,
-                    fill: true,
-                  },
-                ],
-              },
-              options: {
-                animation: false,
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                  x: {
-                    grid: { color: "#e0e0e0", drawBorder: false },
-                    ticks: {
-                      color: "#757575",
-                      font: { family: "Courier New, monospace", size: 10 },
-                    },
-                  },
-                  y: {
-                    min: 0,
-                    max: 1,
-                    grid: { color: "#e0e0e0", drawBorder: false },
-                    ticks: {
-                      color: "#757575",
-                      font: { family: "Courier New, monospace", size: 10 },
-                      stepSize: 1,
-                    },
-                  },
-                },
-                plugins: {
-                  legend: { display: false },
-                  tooltip: {
-                    backgroundColor: "#ffffff",
-                    titleColor: "#212121",
-                    bodyColor: "#212121",
-                    borderColor: "#10b981",
-                    borderWidth: 1,
-                    titleFont: { family: "Courier New, monospace", size: 11 },
-                    bodyFont: { family: "Courier New, monospace", size: 11 },
-                    padding: 8,
-                  },
-                },
-              },
-            });
-          } else {
-            motionChart.data.labels = labels;
-            motionChart.data.datasets[0].data = motion;
-            motionChart.update("none");
-          }
-
-          if (!regressionChart) {
-            regressionChart = new Chart(regressionCtx, {
-              type: "line",
-              data: {
-                labels,
-                datasets: [
-                  {
-                    label: "model_fullness_%",
-                    data: regression,
-                    borderColor: "#8b5cf6",
-                    backgroundColor: "rgba(139, 92, 246, 0.08)",
-                    tension: 0.1,
-                    pointRadius: 0,
-                    borderWidth: 2,
-                    fill: true,
-                  },
-                ],
-              },
-              options: {
-                animation: false,
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                  x: {
-                    grid: { color: "#e0e0e0", drawBorder: false },
-                    ticks: {
-                      color: "#757575",
-                      font: { family: "Courier New, monospace", size: 10 },
-                    },
-                  },
-                  y: {
-                    min: 0,
-                    max: 100,
-                    grid: { color: "#e0e0e0", drawBorder: false },
-                    ticks: {
-                      color: "#757575",
-                      font: { family: "Courier New, monospace", size: 10 },
-                    },
-                    title: {
-                      display: true,
-                      text: "%",
-                      color: "#757575",
-                      font: { family: "Courier New, monospace", size: 10 },
-                    },
-                  },
-                },
-                plugins: {
-                  legend: { display: false },
-                  tooltip: {
-                    backgroundColor: "#ffffff",
-                    titleColor: "#212121",
-                    bodyColor: "#212121",
-                    borderColor: "#8b5cf6",
-                    borderWidth: 1,
-                    titleFont: { family: "Courier New, monospace", size: 11 },
-                    bodyFont: { family: "Courier New, monospace", size: 11 },
-                    padding: 8,
-                  },
-                },
-              },
-            });
-          } else {
-            regressionChart.data.labels = labels;
-            regressionChart.data.datasets[0].data = regression;
-            regressionChart.update("none");
-          }
-        } catch (e) {
-          console.error("updateCharts", e);
         }
-      }
-      async function loadThreshold() {
-        try {
-          const res = await fetch("/api/settings");
-          if (!res.ok) return;
-          const j = await res.json();
-          const t = j.thresholdCm;
-          if (typeof t === "number") {
-            if (els.thresholdInput) els.thresholdInput.value = String(t);
-          }
-          const e = j.emptyThresholdCm;
-          if (typeof e === "number") {
-            if (els.emptyThresholdInput)
-              els.emptyThresholdInput.value = String(e);
-          }
-          const s = j.alertSustainSec;
-          if (typeof s === "number" && els.sustainInput) {
-            els.sustainInput.value = String(s);
-          }
-        } catch { }
-      }
-      function startAutoRefresh() {
-        if (document.hidden) return;
-        stopAutoRefresh();
-        refreshHandle = setInterval(() => {
-          updateDashboard();
-          updateCharts();
-        }, 1500);
-      }
-      function stopAutoRefresh() {
-        if (refreshHandle) {
-          clearInterval(refreshHandle);
-          refreshHandle = null;
+        const res = await fetch(
+          `/api/history?deviceId=${encodeURIComponent(
+            selectedDevice,
+          )}&limit=100`,
+        );
+        const h = await res.json();
+        console.log("Data for charts:", h); // Log the data received for charts
+        if (!h || !h.timestamps) return;
+
+        const labels = h.timestamps.map((t) =>
+          new Date(t).toLocaleTimeString(),
+        );
+        const dist = h.distance || [];
+        const servo = h.servo || [];
+        const motion = h.motion || [];
+        const regression = h.regressionFullness || [];
+
+        if (!distanceChart) {
+          distanceChart = new Chart(distanceCtx, {
+            type: "line",
+            data: {
+              labels,
+              datasets: [
+                {
+                  label: "distance_cm",
+                  data: dist,
+                  borderColor: "#2563eb",
+                  backgroundColor: "rgba(37, 99, 235, 0.08)",
+                  tension: 0.1,
+                  pointRadius: 0,
+                  borderWidth: 2,
+                  fill: true,
+                },
+              ],
+            },
+            options: {
+              animation: false,
+              responsive: true,
+              maintainAspectRatio: false,
+              scales: {
+                x: {
+                  grid: { color: "#e0e0e0", drawBorder: false },
+                  ticks: {
+                    color: "#757575",
+                    font: { family: "Courier New, monospace", size: 10 },
+                  },
+                },
+                y: {
+                  grid: { color: "#e0e0e0", drawBorder: false },
+                  ticks: {
+                    color: "#757575",
+                    font: { family: "Courier New, monospace", size: 10 },
+                  },
+                  title: {
+                    display: true,
+                    text: "cm",
+                    color: "#757575",
+                    font: { family: "Courier New, monospace", size: 10 },
+                  },
+                },
+              },
+              plugins: {
+                legend: { display: false },
+                tooltip: {
+                  backgroundColor: "#ffffff",
+                  titleColor: "#212121",
+                  bodyColor: "#212121",
+                  borderColor: "#2563eb",
+                  borderWidth: 1,
+                  titleFont: { family: "Courier New, monospace", size: 11 },
+                  bodyFont: { family: "Courier New, monospace", size: 11 },
+                  padding: 8,
+                },
+              },
+            },
+          });
+        } else {
+          distanceChart.data.labels = labels;
+          distanceChart.data.datasets[0].data = dist;
+          distanceChart.update("none");
         }
+
+        if (!servoChart) {
+          servoChart = new Chart(servoCtx, {
+            type: "line",
+            data: {
+              labels,
+              datasets: [
+                {
+                  label: "servo_degrees",
+                  data: servo,
+                  borderColor: "#f59e0b",
+                  backgroundColor: "rgba(245, 158, 11, 0.08)",
+                  tension: 0.1,
+                  pointRadius: 0,
+                  borderWidth: 2,
+                  fill: true,
+                },
+              ],
+            },
+            options: {
+              animation: false,
+              responsive: true,
+              maintainAspectRatio: false,
+              scales: {
+                x: {
+                  grid: { color: "#e0e0e0", drawBorder: false },
+                  ticks: {
+                    color: "#757575",
+                    font: { family: "Courier New, monospace", size: 10 },
+                  },
+                },
+                y: {
+                  grid: { color: "#e0e0e0", drawBorder: false },
+                  ticks: {
+                    color: "#757575",
+                    font: { family: "Courier New, monospace", size: 10 },
+                  },
+                  title: {
+                    display: true,
+                    text: "degrees",
+                    color: "#757575",
+                    font: { family: "Courier New, monospace", size: 10 },
+                  },
+                },
+              },
+              plugins: {
+                legend: { display: false },
+                tooltip: {
+                  backgroundColor: "#ffffff",
+                  titleColor: "#212121",
+                  bodyColor: "#212121",
+                  borderColor: "#f59e0b",
+                  borderWidth: 1,
+                  titleFont: { family: "Courier New, monospace", size: 11 },
+                  bodyFont: { family: "Courier New, monospace", size: 11 },
+                  padding: 8,
+                },
+              },
+            },
+          });
+        } else {
+          servoChart.data.labels = labels;
+          servoChart.data.datasets[0].data = servo;
+          servoChart.update("none");
+        }
+
+        if (!motionChart) {
+          motionChart = new Chart(motionCtx, {
+            type: "line",
+            data: {
+              labels,
+              datasets: [
+                {
+                  label: "motion_detected",
+                  data: motion,
+                  borderColor: "#10b981",
+                  backgroundColor: "rgba(16, 185, 129, 0.08)",
+                  stepped: true,
+                  pointRadius: 0,
+                  borderWidth: 2,
+                  fill: true,
+                },
+              ],
+            },
+            options: {
+              animation: false,
+              responsive: true,
+              maintainAspectRatio: false,
+              scales: {
+                x: {
+                  grid: { color: "#e0e0e0", drawBorder: false },
+                  ticks: {
+                    color: "#757575",
+                    font: { family: "Courier New, monospace", size: 10 },
+                  },
+                },
+                y: {
+                  min: 0,
+                  max: 1,
+                  grid: { color: "#e0e0e0", drawBorder: false },
+                  ticks: {
+                    color: "#757575",
+                    font: { family: "Courier New, monospace", size: 10 },
+                    stepSize: 1,
+                  },
+                },
+              },
+              plugins: {
+                legend: { display: false },
+                tooltip: {
+                  backgroundColor: "#ffffff",
+                  titleColor: "#212121",
+                  bodyColor: "#212121",
+                  borderColor: "#10b981",
+                  borderWidth: 1,
+                  titleFont: { family: "Courier New, monospace", size: 11 },
+                  bodyFont: { family: "Courier New, monospace", size: 11 },
+                  padding: 8,
+                },
+              },
+            },
+          });
+        } else {
+          motionChart.data.labels = labels;
+          motionChart.data.datasets[0].data = motion;
+          motionChart.update("none");
+        }
+
+        if (!regressionChart) {
+          regressionChart = new Chart(regressionCtx, {
+            type: "line",
+            data: {
+              labels,
+              datasets: [
+                {
+                  label: "model_fullness_%",
+                  data: regression,
+                  borderColor: "#8b5cf6",
+                  backgroundColor: "rgba(139, 92, 246, 0.08)",
+                  tension: 0.1,
+                  pointRadius: 0,
+                  borderWidth: 2,
+                  fill: true,
+                },
+              ],
+            },
+            options: {
+              animation: false,
+              responsive: true,
+              maintainAspectRatio: false,
+              scales: {
+                x: {
+                  grid: { color: "#e0e0e0", drawBorder: false },
+                  ticks: {
+                    color: "#757575",
+                    font: { family: "Courier New, monospace", size: 10 },
+                  },
+                },
+                y: {
+                  min: 0,
+                  max: 100,
+                  grid: { color: "#e0e0e0", drawBorder: false },
+                  ticks: {
+                    color: "#757575",
+                    font: { family: "Courier New, monospace", size: 10 },
+                  },
+                  title: {
+                    display: true,
+                    text: "%",
+                    color: "#757575",
+                    font: { family: "Courier New, monospace", size: 10 },
+                  },
+                },
+              },
+              plugins: {
+                legend: { display: false },
+                tooltip: {
+                  backgroundColor: "#ffffff",
+                  titleColor: "#212121",
+                  bodyColor: "#212121",
+                  borderColor: "#8b5cf6",
+                  borderWidth: 1,
+                  titleFont: { family: "Courier New, monospace", size: 11 },
+                  bodyFont: { family: "Courier New, monospace", size: 11 },
+                  padding: 8,
+                },
+              },
+            },
+          });
+        } else {
+          regressionChart.data.labels = labels;
+          regressionChart.data.datasets[0].data = regression;
+          regressionChart.update("none");
+        }
+      } catch (e) {
+        console.error("updateCharts", e);
       }
-      document.addEventListener("visibilitychange", () => {
-        if (document.hidden) stopAutoRefresh();
-        else startAutoRefresh();
-      });
-      window.addEventListener("beforeunload", stopAutoRefresh);
-    </script>
+    }
+    async function updateTimeToFull() {
+      try {
+        const res = await fetch("/api/time-to-full");
+        if (!res.ok) return;
+        const data = await res.json();
+        els.timeToFull.textContent = formatHours(data.time_to_full_hours);
+      } catch (e) {
+        console.error("updateTimeToFull", e);
+        els.timeToFull.textContent = "Error";
+      }
+    }
+    async function loadThreshold() {
+      try {
+        const res = await fetch("/api/settings");
+        if (!res.ok) return;
+        const j = await res.json();
+        const t = j.thresholdCm;
+        if (typeof t === "number") {
+          if (els.thresholdInput) els.thresholdInput.value = String(t);
+        }
+        const e = j.emptyThresholdCm;
+        if (typeof e === "number") {
+          if (els.emptyThresholdInput)
+            els.emptyThresholdInput.value = String(e);
+        }
+        const s = j.alertSustainSec;
+        if (typeof s === "number" && els.sustainInput) {
+          els.sustainInput.value = String(s);
+        }
+      } catch { }
+    }
+    function startAutoRefresh() {
+      if (document.hidden) return;
+      stopAutoRefresh();
+      refreshHandle = setInterval(() => {
+        updateDashboard();
+        updateCharts();
+        updateTimeToFull();
+      }, 1500);
+    }
+    function stopAutoRefresh() {
+      if (refreshHandle) {
+        clearInterval(refreshHandle);
+        refreshHandle = null;
+      }
+    }
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) stopAutoRefresh();
+      else startAutoRefresh();
+    });
+    window.addEventListener("beforeunload", stopAutoRefresh);
+  </script>
 </body>
 
 </html>
