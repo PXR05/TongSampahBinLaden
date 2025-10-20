@@ -288,9 +288,9 @@ void setup() {
 
 void readSensor() {
   // Don't read distance when lid is open (servo activated) - prevents false readings
-  if (shouldActivateServo || currentPosition != originalPosition) {
-    return;
-  }
+  // if (shouldActivateServo || currentPosition != originalPosition) {
+  //   return;
+  // }
 
   // HC-SR04 ultrasonic sensor trigger sequence
   digitalWrite(trigPin, LOW);
