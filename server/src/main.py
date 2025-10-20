@@ -13,6 +13,13 @@ from functools import wraps
 
 
 from flask import Flask, jsonify, render_template, request, Response
+
+from .models.fuzzy_model import compute_fullness
+from .models.regression_model import predict_fullness
+from .models.time_prediction_model import train_fullness_prediction_model, predict_time_to_full
+import joblib
+from threading import Thread
+import time as _time
 from .utils import (
     JSONLike,
     DEFAULT_THRESHOLD_CM,
@@ -72,6 +79,46 @@ alert_empty_sent: defaultdict[str, bool] = defaultdict(bool)
 alert_partial_since: defaultdict[str, datetime | None] = defaultdict(lambda: None)
 # Alert tracking: whether "partial" alert has been sent
 alert_partial_sent: defaultdict[str, bool] = defaultdict(bool)
+
+# Time-to-full prediction globals
+time_to_full_hours: float | None = None
+time_prediction_model = None
+time_prediction_start_time = None
+
+
+def load_time_prediction_model():
+    """Load saved time-prediction model (if present) into memory."""
+    global time_prediction_model, time_prediction_start_time
+    try:
+        model_path = "server/src/models/saved_models/time_prediction_model.joblib"
+        if not os.path.exists(model_path):
+            # no model saved yet
+            time_prediction_model = None
+            time_prediction_start_time = None
+            return
+        data = joblib.load(model_path)
+        # file saved as dict {'model': model, 'start_time': start_time}
+        time_prediction_model = data.get("model")
+        time_prediction_start_time = data.get("start_time")
+    except Exception as e:
+        print(f"Error loading time prediction model: {e}")
+        time_prediction_model = None
+        time_prediction_start_time = None
+
+
+def update_time_to_full_prediction():
+    """Compute latest time-to-full and store in `time_to_full_hours`."""
+    global time_to_full_hours
+    try:
+        if time_prediction_model is None or time_prediction_start_time is None:
+            time_to_full_hours = None
+            return
+        # predict_time_to_full returns hours or float('inf') or None
+        hrs = predict_time_to_full(time_prediction_model, time_prediction_start_time)
+        time_to_full_hours = hrs
+    except Exception as e:
+        print(f"Error updating time-to-full prediction: {e}")
+        time_to_full_hours = None
 
 
 def load_cfg() -> dict[str, float]:
@@ -306,6 +353,7 @@ def csv_hist(device_id: str, limit: int = 100) -> list[dict[str, CSVValue]]:
                     "distance": pfloat(row.get("distance")),
                     "servoPosition": pint(row.get("servoPosition")),
                     "motion": pbool(row.get("motion")),
+                    "regressionFullness": pfloat(row.get("regressionFullness")),
                 }
             )
     except Exception:
@@ -363,6 +411,7 @@ def csv_hist_page(
                     "shouldActivateServo": pbool(row.get("shouldActivateServo")),
                     "isFull": pbool(row.get("isFull")),
                     "fillStatus": row.get("fillStatus", "unknown"),
+                    "regressionFullness": pfloat(row.get("regressionFullness")),
                 }
             )
     except Exception:
@@ -417,6 +466,7 @@ def mem_hist(device_id: str, limit: int) -> list[dict[str, CSVValue]]:
             "distance": p.get("distance"),
             "servoPosition": p.get("servoPosition"),
             "motion": p.get("motion"),
+            "regressionFullness": p.get("regressionFullness"),
         }
         for p in mem_series
     ]
@@ -450,6 +500,7 @@ def mem_hist_page(
             "shouldActivateServo": p.get("shouldActivateServo"),
             "isFull": p.get("isFull"),
             "fillStatus": p.get("fillStatus", "unknown"),
+            "regressionFullness": p.get("regressionFullness"),
         }
         for p in sliced
     ]
@@ -474,17 +525,30 @@ def sensor_in():
     device_id = str(data.get("deviceId") or "unknown")
     now = datetime.now().isoformat()
 
+    dist_val = pfloat(data.get("distance"))
+    
     # Augment device data with server-side calculations
     data["serverTimestamp"] = now
     dist_val = pfloat(data.get("distance"))
     thr = pfloat(settings.get("thresholdCm"), 5) or 5
     empty_thr = pfloat(settings.get("emptyThresholdCm"), 15) or 15
     is_full = 1 if (dist_val is not None and dist_val <= thr) else 0
-    fill_status = calculate_fill_status(dist_val, thr, empty_thr)
+    # fill_status = calculate_fill_status(dist_val, thr, empty_thr)
+
+    fullness_percent = compute_fullness(dist_val)
+    if fullness_percent is None:
+        fill_status = "unknown"
+    elif fullness_percent >= 85:
+        fill_status = "full"
+    elif fullness_percent >= 40:
+        fill_status = "partial"
+    else:
+        fill_status = "empty"
+
+    regression_fullness = predict_fullness(dist_val)
     data["isFull"] = is_full
     data["fillStatus"] = fill_status
-    # Store latest state in memory (overwrites previous)
-    device_data[device_id] = data
+    data["regressionFullness"] = regression_fullness
 
     # Prepare point for history tracking
     point: dict[str, CSVValue] = {
@@ -497,6 +561,7 @@ def sensor_in():
         "motion": 1 if data.get("motion") else 0,
         "isFull": is_full,
         "fillStatus": fill_status,
+        "regressionFullness": regression_fullness,
     }
     # Add to circular buffer (auto-discards old entries)
     device_history[device_id].append(point)
@@ -509,11 +574,33 @@ def sensor_in():
 
     # Persist to CSV (non-blocking, failures silently ignored)
     try:
+        # Pass the augmented data dictionary which now includes the calculated fields
         csv_append(cast(Mapping[str, JSONLike], data))
     except Exception:
         pass
 
+    # Auto-train the time-to-full model whenever new history arrives.
+    # Note: training on every reading can be expensive; consider throttling.
+    try:
+        train_fullness_prediction_model([CSV_PATH])
+        load_time_prediction_model()
+    except Exception as e:
+        print(f"Auto-training failed: {e}")
+
+    # Update the in-memory data for the device
+    device_data[device_id] = data
+
     return jsonify({"status": "ok", "deviceId": device_id, "serverTimestamp": now})
+
+
+@app.route("/api/time-to-full")
+def time_to_full_api():
+    """Return the current predicted time (hours) until bin is full."""
+    if time_to_full_hours is None:
+        return jsonify({"time_to_full_hours": None, "message": "Prediction not available."})
+    if time_to_full_hours == float("inf"):
+        return jsonify({"time_to_full_hours": "inf", "message": "Not filling / static level."})
+    return jsonify({"time_to_full_hours": time_to_full_hours})
 
 
 @app.route("/api/command", methods=["POST", "GET"])
@@ -628,6 +715,7 @@ def history_api():
             "servo": [p.get("servoPosition") for p in series],
             "motion": [p.get("motion") for p in series],
             "fillStatus": [p.get("fillStatus") for p in series],
+            "regressionFullness": [p.get("regressionFullness") for p in series],
         }
     )
 
@@ -800,6 +888,18 @@ def health_api():
 
 
 def run() -> None:
+    # Load model at startup (if exists)
+    load_time_prediction_model()
+
+    # background updater: refresh prediction every 60s
+    def _prediction_updater():
+        while True:
+            update_time_to_full_prediction()
+            _time.sleep(60)
+
+    updater_thread = Thread(target=_prediction_updater, daemon=True)
+    updater_thread.start()
+
     app.run(host="0.0.0.0", port=5000, debug=False)
 
 
