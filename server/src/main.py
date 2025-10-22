@@ -16,7 +16,7 @@ import paho.mqtt.client as mqtt
 from flask import Flask, jsonify, render_template, request, Response
 
 from .models.fuzzy_model import compute_fullness
-from .models.regression_model import predict_fullness
+from .models.regression_model import predict_fullness, train_regression_model
 from .models.time_prediction_model import train_fullness_prediction_model, predict_time_to_full
 import joblib
 from threading import Thread
@@ -92,8 +92,8 @@ alert_partial_sent: defaultdict[str, bool] = defaultdict(bool)
 
 # Time-to-full prediction globals
 time_to_full_hours: float | None = None
-time_prediction_model = None
-time_prediction_start_time = None
+last_model_training: float = 0.0  # Timestamp of last model training
+MODEL_TRAINING_INTERVAL: float = 60.0  # Train models every 60 seconds
 
 # MQTT Client instance
 mqtt_client: mqtt.Client | None = None
@@ -201,12 +201,11 @@ def handle_mqtt_sensor_data(device_id: str, payload: str) -> None:
         except Exception:
             pass
 
-        # Auto-train the time-to-full model whenever new history arrives.
+        # Auto-train models periodically (non-blocking)
         try:
-            train_fullness_prediction_model([CSV_PATH])
-            load_time_prediction_model()
+            train_models_from_history()
         except Exception as e:
-            print(f"Auto-training failed: {e}")
+            print(f"Model training failed: {e}")
 
         # Update the in-memory data for the device
         device_data[device_id] = data
@@ -242,39 +241,55 @@ def publish_command_mqtt(device_id: str, command: dict[str, JSONLike]) -> bool:
         return False
 
 
-def load_time_prediction_model():
-    """Load saved time-prediction model (if present) into memory."""
-    global time_prediction_model, time_prediction_start_time
-    try:
-        model_path = "server/src/models/saved_models/time_prediction_model.joblib"
-        if not os.path.exists(model_path):
-            # no model saved yet
-            time_prediction_model = None
-            time_prediction_start_time = None
-            return
-        data = joblib.load(model_path)
-        # file saved as dict {'model': model, 'start_time': start_time}
-        time_prediction_model = data.get("model")
-        time_prediction_start_time = data.get("start_time")
-    except Exception as e:
-        print(f"Error loading time prediction model: {e}")
-        time_prediction_model = None
-        time_prediction_start_time = None
-
-
 def update_time_to_full_prediction():
     """Compute latest time-to-full and store in `time_to_full_hours`."""
     global time_to_full_hours
     try:
-        if time_prediction_model is None or time_prediction_start_time is None:
-            time_to_full_hours = None
-            return
-        # predict_time_to_full returns hours or float('inf') or None
-        hrs = predict_time_to_full(time_prediction_model, time_prediction_start_time)
+        # Get threshold from settings
+        threshold = pfloat(settings.get("thresholdCm"), 5.0) or 5.0
+        
+        # Predict using the global model (auto-trained)
+        hrs = predict_time_to_full(full_threshold_cm=threshold)
         time_to_full_hours = hrs
+        
+        if hrs is not None and hrs != float('inf'):
+            print(f"Time to full: {hrs:.2f} hours")
+        
     except Exception as e:
         print(f"Error updating time-to-full prediction: {e}")
         time_to_full_hours = None
+
+
+def train_models_from_history():
+    """
+    Train both regression and time prediction models from historical CSV data.
+    This should be called periodically as new data arrives.
+    """
+    global last_model_training
+    
+    current_time = _time.time()
+    
+    # Only train if enough time has passed (avoid training too frequently)
+    if current_time - last_model_training < MODEL_TRAINING_INTERVAL:
+        return
+    
+    try:
+        if not os.path.exists(CSV_PATH):
+            return
+        
+        # Train regression model (distance -> fullness %)
+        train_regression_model(CSV_PATH, bin_height_cm=20.0)
+        
+        # Train time prediction model (time -> distance)
+        train_fullness_prediction_model([CSV_PATH], min_data_points=10)
+        
+        # Update time-to-full prediction
+        update_time_to_full_prediction()
+        
+        last_model_training = current_time
+        
+    except Exception as e:
+        print(f"Error training models: {e}")
 
 
 def load_cfg() -> dict[str, float]:
@@ -699,10 +714,25 @@ def sensor_in():
 def time_to_full_api():
     """Return the current predicted time (hours) until bin is full."""
     if time_to_full_hours is None:
-        return jsonify({"time_to_full_hours": None, "message": "Prediction not available."})
+        return jsonify({"time_to_full_hours": None, "message": "Prediction not available. Need more data."})
     if time_to_full_hours == float("inf"):
         return jsonify({"time_to_full_hours": "inf", "message": "Not filling / static level."})
     return jsonify({"time_to_full_hours": time_to_full_hours})
+
+
+@app.route("/api/model-info")
+def model_info_api():
+    """Return information about the trained models."""
+    from .models.time_prediction_model import get_model_info
+    
+    time_model_info = get_model_info()
+    
+    return jsonify({
+        "time_prediction_model": time_model_info,
+        "last_training": last_model_training,
+        "training_interval_seconds": MODEL_TRAINING_INTERVAL,
+        "current_time_to_full_hours": time_to_full_hours
+    })
 
 
 @app.route("/api/command", methods=["POST", "GET"])
@@ -1004,8 +1034,12 @@ def run() -> None:
     except Exception as e:
         print(f"Failed to connect MQTT client: {e}")
     
-    # Load model at startup (if exists)
-    load_time_prediction_model()
+    # Train models at startup from existing data (if available)
+    print("Training models from historical data...")
+    try:
+        train_models_from_history()
+    except Exception as e:
+        print(f"Initial model training failed: {e}")
 
     # background updater: refresh prediction every 60s
     def _prediction_updater():
