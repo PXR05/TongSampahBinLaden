@@ -10,6 +10,7 @@ from typing import Callable, ParamSpec, TypeVar, cast
 
 import requests
 from functools import wraps
+import paho.mqtt.client as mqtt
 
 
 from flask import Flask, jsonify, render_template, request, Response
@@ -48,6 +49,13 @@ success = load_dotenv()
 if not success:
     print("Warning: .env file not found or could not be loaded.")
 
+# MQTT Configuration
+MQTT_BROKER = "test.mosquitto.org"
+MQTT_PORT = 1883
+MQTT_TOPIC_SENSOR = "esp32_trash/telemetry"  # + is wildcard for device_id
+MQTT_TOPIC_COMMAND = "esp32_trash/command"  # + is wildcard for device_id
+MQTT_TOPIC_COMMAND_RESPONSE = "tongsampahbinladen/command/{}/response"  # {} will be replaced with device_id
+
 app = Flask(__name__)
 app.config["JSONIFY_PRETTYPRINT_REGULAR"] = False
 app.config["JSON_SORT_KEYS"] = False
@@ -84,6 +92,149 @@ alert_partial_sent: defaultdict[str, bool] = defaultdict(bool)
 time_to_full_hours: float | None = None
 time_prediction_model = None
 time_prediction_start_time = None
+
+# MQTT Client instance
+mqtt_client: mqtt.Client | None = None
+
+
+def setup_mqtt() -> mqtt.Client:
+    """Initialize and configure MQTT client."""
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+    
+    def on_connect(client, userdata, flags, reason_code, properties):
+        """Callback when MQTT client connects to broker."""
+        if reason_code == 0:
+            print(f"Connected to MQTT Broker at {MQTT_BROKER}:{MQTT_PORT}")
+            # Subscribe to sensor data and command topics
+            client.subscribe(MQTT_TOPIC_SENSOR)
+            print(f"Subscribed to {MQTT_TOPIC_SENSOR}")
+        else:
+            print(f"Failed to connect to MQTT Broker, return code {reason_code}")
+    
+    def on_message(client, userdata, msg):
+        """Callback when a message is received on subscribed topics."""
+        try:
+            topic = msg.topic
+            payload = msg.payload.decode('utf-8')
+            
+            # Handle sensor data messages
+            if topic.startswith("esp32_trash/telemetry"):
+                device_id = topic.split('/')[-1]
+                handle_mqtt_sensor_data(device_id, payload)
+            
+        except Exception as e:
+            print(f"Error processing MQTT message: {e}")
+    
+    def on_disconnect(client, userdata, flags, reason_code, properties):
+        """Callback when MQTT client disconnects."""
+        print(f"Disconnected from MQTT Broker with reason code {reason_code}")
+    
+    client.on_connect = on_connect
+    client.on_message = on_message
+    client.on_disconnect = on_disconnect
+    
+    return client
+
+
+def handle_mqtt_sensor_data(device_id: str, payload: str) -> None:
+    """Process sensor data received via MQTT."""
+    try:
+        data = json.loads(payload)
+        now = datetime.now().isoformat()
+        
+        # Add device ID if not present
+        if "deviceId" not in data:
+            data["deviceId"] = device_id
+        
+        # Augment device data with server-side calculations
+        data["serverTimestamp"] = now
+        dist_val = pfloat(data.get("distance"))
+        thr = pfloat(settings.get("thresholdCm"), 5) or 5
+        empty_thr = pfloat(settings.get("emptyThresholdCm"), 15) or 15
+        is_full = 1 if (dist_val is not None and dist_val <= thr) else 0
+
+        fullness_percent = compute_fullness(dist_val)
+        if fullness_percent is None:
+            fill_status = "unknown"
+        elif fullness_percent >= 85:
+            fill_status = "full"
+        elif fullness_percent >= 40:
+            fill_status = "partial"
+        else:
+            fill_status = "empty"
+
+        regression_fullness = predict_fullness(dist_val)
+        data["isFull"] = is_full
+        data["fillStatus"] = fill_status
+        data["regressionFullness"] = regression_fullness
+
+        # Prepare point for history tracking
+        point: dict[str, CSVValue] = {
+            "serverTimestamp": now,
+            "deviceTimestamp": csv_val(data.get("deviceTimestamp")),
+            "deviceUptimeMs": csv_val(data.get("deviceUptimeMs")),
+            "distance": csv_val(data.get("distance")),
+            "servoPosition": csv_val(data.get("servoPosition")),
+            "targetPosition": csv_val(data.get("targetPosition")),
+            "motion": 1 if data.get("motion") else 0,
+            "isFull": is_full,
+            "fillStatus": fill_status,
+            "regressionFullness": regression_fullness,
+        }
+        # Add to circular buffer (auto-discards old entries)
+        device_history[device_id].append(point)
+
+        # Check if alerts should be triggered (non-blocking)
+        try:
+            alert_eval(device_id, data.get("distance"))
+        except Exception:
+            pass
+
+        # Persist to CSV (non-blocking, failures silently ignored)
+        try:
+            csv_append(cast(Mapping[str, JSONLike], data))
+        except Exception:
+            pass
+
+        # Auto-train the time-to-full model whenever new history arrives.
+        try:
+            train_fullness_prediction_model([CSV_PATH])
+            load_time_prediction_model()
+        except Exception as e:
+            print(f"Auto-training failed: {e}")
+
+        # Update the in-memory data for the device
+        device_data[device_id] = data
+        
+        print(f"Processed sensor data from device {device_id} via MQTT")
+        
+    except json.JSONDecodeError as e:
+        print(f"Invalid JSON in MQTT sensor data: {e}")
+    except Exception as e:
+        print(f"Error handling MQTT sensor data: {e}")
+
+
+def publish_command_mqtt(device_id: str, command: dict[str, JSONLike]) -> bool:
+    """Publish command to device via MQTT."""
+    global mqtt_client
+    if mqtt_client is None or not mqtt_client.is_connected():
+        print("MQTT client not connected, cannot publish command")
+        return False
+    
+    try:
+        topic = f"esp32_trash/command"
+        payload = json.dumps(command)
+        result = mqtt_client.publish(topic, payload, qos=1)
+        
+        if result.rc == mqtt.MQTT_ERR_SUCCESS:
+            print(f"Published command to {topic}: {payload}")
+            return True
+        else:
+            print(f"Failed to publish command, error code: {result.rc}")
+            return False
+    except Exception as e:
+        print(f"Error publishing MQTT command: {e}")
+        return False
 
 
 def load_time_prediction_model():
@@ -173,6 +324,7 @@ def enqueue_command(
     """
     Queue a command for a device. Each device only keeps the latest command.
     Commands have incrementing IDs so devices can detect new commands.
+    Also publishes command via MQTT if available.
     """
     device_command_seq[device_id] += 1
     cmd_id = device_command_seq[device_id]
@@ -184,6 +336,10 @@ def enqueue_command(
     }
     # Overwrites any previous command for this device
     device_commands[device_id] = command
+    
+    # Publish via MQTT
+    publish_command_mqtt(device_id, command)
+    
     return command
 
 
@@ -513,6 +669,8 @@ def sensor_in():
     """
     Main endpoint for IoT devices to post sensor data.
     Processes data, stores it in memory & CSV, evaluates alerts.
+    NOTE: This HTTP endpoint is kept for backward compatibility.
+    Devices should use MQTT: tongsampahbinladen/sensor/{deviceId}
     """
     # Bearer token authentication for device API
     auth_header = request.headers.get("Authorization")
@@ -524,74 +682,12 @@ def sensor_in():
         return err("No data provided", 400)
 
     device_id = str(data.get("deviceId") or "unknown")
-    now = datetime.now().isoformat()
-
-    dist_val = pfloat(data.get("distance"))
     
-    # Augment device data with server-side calculations
-    data["serverTimestamp"] = now
-    dist_val = pfloat(data.get("distance"))
-    thr = pfloat(settings.get("thresholdCm"), 5) or 5
-    empty_thr = pfloat(settings.get("emptyThresholdCm"), 15) or 15
-    is_full = 1 if (dist_val is not None and dist_val <= thr) else 0
-    # fill_status = calculate_fill_status(dist_val, thr, empty_thr)
+    # Use the same handler as MQTT
+    payload = json.dumps(data)
+    handle_mqtt_sensor_data(device_id, payload)
 
-    fullness_percent = compute_fullness(dist_val)
-    if fullness_percent is None:
-        fill_status = "unknown"
-    elif fullness_percent >= 85:
-        fill_status = "full"
-    elif fullness_percent >= 40:
-        fill_status = "partial"
-    else:
-        fill_status = "empty"
-
-    regression_fullness = predict_fullness(dist_val)
-    data["isFull"] = is_full
-    data["fillStatus"] = fill_status
-    data["regressionFullness"] = regression_fullness
-
-    # Prepare point for history tracking
-    point: dict[str, CSVValue] = {
-        "serverTimestamp": now,
-        "deviceTimestamp": csv_val(data.get("deviceTimestamp")),
-        "deviceUptimeMs": csv_val(data.get("deviceUptimeMs")),
-        "distance": csv_val(data.get("distance")),
-        "servoPosition": csv_val(data.get("servoPosition")),
-        "targetPosition": csv_val(data.get("targetPosition")),
-        "motion": 1 if data.get("motion") else 0,
-        "isFull": is_full,
-        "fillStatus": fill_status,
-        "regressionFullness": regression_fullness,
-    }
-    # Add to circular buffer (auto-discards old entries)
-    device_history[device_id].append(point)
-
-    # Check if alerts should be triggered (non-blocking)
-    try:
-        alert_eval(device_id, data.get("distance"))
-    except Exception:
-        pass
-
-    # Persist to CSV (non-blocking, failures silently ignored)
-    try:
-        # Pass the augmented data dictionary which now includes the calculated fields
-        csv_append(cast(Mapping[str, JSONLike], data))
-    except Exception:
-        pass
-
-    # Auto-train the time-to-full model whenever new history arrives.
-    # Note: training on every reading can be expensive; consider throttling.
-    try:
-        train_fullness_prediction_model([CSV_PATH])
-        load_time_prediction_model()
-    except Exception as e:
-        print(f"Auto-training failed: {e}")
-
-    # Update the in-memory data for the device
-    device_data[device_id] = data
-
-    return jsonify({"status": "ok", "deviceId": device_id, "serverTimestamp": now})
+    return jsonify({"status": "ok", "deviceId": device_id, "serverTimestamp": datetime.now().isoformat(), "note": "Consider using MQTT: tongsampahbinladen/sensor/{deviceId}"})
 
 
 @app.route("/api/time-to-full")
@@ -608,8 +704,9 @@ def time_to_full_api():
 def command_api():
     """
     Dual-purpose endpoint:
-    POST: Web dashboard sends commands to be queued for devices
-    GET: IoT devices poll for pending commands (long-polling pattern)
+    POST: Web dashboard sends commands to be queued for devices (also publishes via MQTT)
+    GET: IoT devices poll for pending commands (long-polling pattern - for backward compatibility)
+    NOTE: Devices should subscribe to MQTT: tongsampahbinladen/command/{deviceId}
     """
     if request.method == "POST":
         # POST: Enqueue command from dashboard (requires auth)
@@ -659,9 +756,9 @@ def command_api():
             payload = {"action": "setAngle", "targetPosition": target_int}
 
         command = enqueue_command(device_id, payload)
-        return jsonify({"status": "ok", **command})
+        return jsonify({"status": "ok", **command, "note": "Command published via MQTT to tongsampahbinladen/command/{deviceId}"})
 
-    # GET: Device polling for new commands
+    # GET: Device polling for new commands (backward compatibility)
     device_id = arg_str("deviceId")
     if not device_id:
         # Auto-select first available device if none specified
@@ -889,6 +986,19 @@ def health_api():
 
 
 def run() -> None:
+    global mqtt_client
+    
+    # Initialize and connect MQTT client
+    print("Initializing MQTT client...")
+    mqtt_client = setup_mqtt()
+    
+    try:
+        mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
+        mqtt_client.loop_start()  # Start MQTT network loop in background thread
+        print(f"MQTT client connecting to {MQTT_BROKER}:{MQTT_PORT}...")
+    except Exception as e:
+        print(f"Failed to connect MQTT client: {e}")
+    
     # Load model at startup (if exists)
     load_time_prediction_model()
 
@@ -901,7 +1011,14 @@ def run() -> None:
     updater_thread = Thread(target=_prediction_updater, daemon=True)
     updater_thread.start()
 
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    try:
+        app.run(host="0.0.0.0", port=5000, debug=False)
+    finally:
+        # Clean up MQTT connection on shutdown
+        if mqtt_client:
+            mqtt_client.loop_stop()
+            mqtt_client.disconnect()
+            print("MQTT client disconnected")
 
 
 if __name__ == "__main__":
