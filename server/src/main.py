@@ -50,8 +50,10 @@ if not success:
     print("Warning: .env file not found or could not be loaded.")
 
 # MQTT Configuration
-MQTT_BROKER = "test.mosquitto.org"
+MQTT_BROKER = "34.101.81.128"
 MQTT_PORT = 1883
+MQTT_USERNAME = "trash"
+MQTT_PASSWORD = "trash_123"
 MQTT_TOPIC_SENSOR = "esp32_trash/telemetry"  # + is wildcard for device_id
 MQTT_TOPIC_COMMAND = "esp32_trash/command"  # + is wildcard for device_id
 MQTT_TOPIC_COMMAND_RESPONSE = "tongsampahbinladen/command/{}/response"  # {} will be replaced with device_id
@@ -98,13 +100,16 @@ mqtt_client: mqtt.Client | None = None
 
 
 def setup_mqtt() -> mqtt.Client:
-    """Initialize and configure MQTT client."""
+    """Initialize and configure MQTT client with authentication."""
     client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+    
+    # Set username and password for MQTT authentication
+    client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
     
     def on_connect(client, userdata, flags, reason_code, properties):
         """Callback when MQTT client connects to broker."""
         if reason_code == 0:
-            print(f"Connected to MQTT Broker at {MQTT_BROKER}:{MQTT_PORT}")
+            print(f"Connected to MQTT Broker at {MQTT_BROKER}:{MQTT_PORT} (authenticated as {MQTT_USERNAME})")
             # Subscribe to sensor data and command topics
             client.subscribe(MQTT_TOPIC_SENSOR)
             print(f"Subscribed to {MQTT_TOPIC_SENSOR}")

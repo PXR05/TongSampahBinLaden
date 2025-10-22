@@ -8,7 +8,7 @@
 #include <time.h>
 
 // --- NEW MQTT Configuration ---
-const char* mqtt_server = "test.mosquitto.org";
+// MQTT broker will be configured via web interface (stored in cfg_mqttURL)
 const int mqtt_port = 1883; // Standard unencrypted MQTT port
 // Define your topics
 #define MQTT_TOPIC_TELEMETRY "esp32_trash/telemetry"
@@ -18,27 +18,27 @@ WiFiClient espClient;
 PubSubClient mqttClient(espClient);
 // ----------------------------
 
-constexpr uint32_t NTP_VALID_EPOCH = 1609459200UL; // 2021-01-01 (Unix timestamp to validate NTP sync)
+constexpr uint32_t NTP_VALID_EPOCH = 1609459200UL;         // 2021-01-01 (Unix timestamp to validate NTP sync)
 constexpr unsigned long WIFI_CONNECT_TIMEOUT_MS = 30000UL; // 30 seconds max to connect to WiFi
-constexpr unsigned long ULTRASONIC_TIMEOUT_US = 20000UL; // Max time to wait for echo (prevents blocking)
+constexpr unsigned long ULTRASONIC_TIMEOUT_US = 20000UL;   // Max time to wait for echo (prevents blocking)
 
 constexpr float SOUND_SPEED_CM_PER_US = 0.034f; // Speed of sound at room temp: 343 m/s = 0.034 cm/µs
 
-constexpr int RED_CHANNEL   = 0; // PWM channel assignments for RGB LED
+constexpr int RED_CHANNEL = 0; // PWM channel assignments for RGB LED
 constexpr int GREEN_CHANNEL = 1;
-constexpr int BLUE_CHANNEL  = 2;
+constexpr int BLUE_CHANNEL = 2;
 
-constexpr int PWM_FREQ = 5000; // 5kHz PWM frequency (above audible range)
+constexpr int PWM_FREQ = 5000;    // 5kHz PWM frequency (above audible range)
 constexpr int PWM_RESOLUTION = 8; // 8-bit resolution (0-255 brightness levels)
 
 constexpr int SERVO_MIN = 0;
 constexpr int SERVO_MAX = 180;
 
 // --- HTTP Constants Removed ---
-// constexpr int HTTP_TIMEOUT_SENSOR_MS = 2000; 
+// constexpr int HTTP_TIMEOUT_SENSOR_MS = 2000;
 // constexpr int HTTP_TIMEOUT_COMMAND_MS = 1500;
-// const char *API_SENSOR_PATH = "/api/sensor-data"; 
-// const char *API_COMMAND_PATH = "/api/command"; 
+// const char *API_SENSOR_PATH = "/api/sensor-data";
+// const char *API_COMMAND_PATH = "/api/command";
 
 void loadConfig();
 void setupAP();
@@ -51,26 +51,25 @@ inline bool isWifiConnected();
 inline bool timeIsValid();
 inline int clampServo(int angle);
 void requestTargetPosition(int targetAngle);
-void saveConfig(const String &nssid, const String &npass, const String &nserver,
+void saveConfig(const String &nssid, const String &npass, const String &nmqtt,
                 const String &ndevice);
 void setColor(int red, int green, int blue);
 void setupRGBLED();
 
 // --- NEW MQTT Function Prototypes ---
 void setupMQTT();
-void mqttCallback(char* topic, byte* payload, unsigned int length);
+void mqttCallback(char *topic, byte *payload, unsigned int length);
 void reconnectMQTT();
 void publishTelemetry();
 // ----------------------------------
 
-
-Preferences prefs; // Non-volatile storage for configuration persistence
+Preferences prefs;    // Non-volatile storage for configuration persistence
 WebServer server(80); // HTTP server for web-based configuration UI
 
 // Default configuration values (overridden by saved preferences)
 String cfg_ssid = "ssid";
 String cfg_password = "password";
-String cfg_serverURL = "http://10.0.0.2:5000"; // No longer used, but kept for AP config
+String cfg_mqttURL = "test.mosquitto.org"; // MQTT broker URL (configurable via web interface)
 String cfg_deviceID = "esp32_trash";
 
 // Access Point credentials (for configuration mode)
@@ -105,21 +104,23 @@ unsigned long pirInterval = 100;        // Check motion every 100ms
 unsigned long dataInterval = 1000;      // Send data to server every 1 second
 // unsigned long commandPollInterval = 500; // REMOVED
 // unsigned long lastCommandPoll = 0;       // REMOVED
-unsigned long statusLedTime = 0;        // When status LED was activated
-bool statusLedActive = false;           // Whether status LED is currently on
+unsigned long statusLedTime = 0; // When status LED was activated
+bool statusLedActive = false;    // Whether status LED is currently on
 
 // Servo control state
-int currentPosition = 0;     // Current servo angle (0-180°)
-int targetPosition = 0;      // Desired servo angle
-int servoStep = 10;          // Degrees to move per update (controls speed)
+int currentPosition = 0;          // Current servo angle (0-180°)
+int targetPosition = 0;           // Desired servo angle
+int servoStep = 10;               // Degrees to move per update (controls speed)
 bool shouldActivateServo = false; // Whether servo should be in activated state
-int originalPosition = 0;    // Closed/resting position (lid closed)
-int activatedPosition = 90;  // Open position (lid open for trash disposal)
+int originalPosition = 0;         // Closed/resting position (lid closed)
+int activatedPosition = 90;       // Open position (lid open for trash disposal)
 
 // Non-blocking task scheduler helper: checks if enough time has elapsed
 inline bool shouldRun(const unsigned long now, unsigned long &last,
-                      const unsigned long interval) {
-  if (now - last >= interval) {
+                      const unsigned long interval)
+{
+  if (now - last >= interval)
+  {
     last = now; // Update timestamp for next interval
     return true;
   }
@@ -130,27 +131,32 @@ inline bool isWifiConnected() { return WiFi.status() == WL_CONNECTED; }
 
 inline bool timeIsValid() { return time(nullptr) > NTP_VALID_EPOCH; }
 
-inline int clampServo(int angle) {
+inline int clampServo(int angle)
+{
   return constrain(angle, SERVO_MIN, SERVO_MAX);
 }
 
-void requestTargetPosition(int targetAngle) {
+void requestTargetPosition(int targetAngle)
+{
   int clamped = clampServo(targetAngle);
   // Only accept new target if servo is not currently moving (avoids jerky motion)
-  if (currentPosition == targetPosition) {
+  if (currentPosition == targetPosition)
+  {
     targetPosition = clamped;
-    autoMode = false; // Manual command disables auto mode
+    autoMode = false;                                           // Manual command disables auto mode
     shouldActivateServo = (targetPosition != originalPosition); // Track if lid is open
   }
 }
 
 // void configureHttp(...) // REMOVED
 
-String buildTelemetryJson() {
+String buildTelemetryJson()
+{
   DynamicJsonDocument doc(256);
   doc["deviceId"] = cfg_deviceID.c_str();
   time_t nowSec = time(nullptr);
-  if (nowSec > NTP_VALID_EPOCH) {
+  if (nowSec > NTP_VALID_EPOCH)
+  {
     doc["deviceTimestamp"] = (uint32_t)nowSec;
   }
   doc["deviceUptimeMs"] = millis();
@@ -167,7 +173,8 @@ String buildTelemetryJson() {
   return jsonString;
 }
 
-void setColor(int red, int green, int blue) {
+void setColor(int red, int green, int blue)
+{
   // ini kalo kebalik yg shared pin nya common anode (+3,3V ON 0 OFF 255)
   // red   = 255 - red;
   // green = 255 - green;
@@ -197,7 +204,6 @@ void setColor(int red, int green, int blue) {
 
 // void pollCommand() // REMOVED
 
-
 // -----------------------------------------------------------------
 // --- NEW MQTT Functions ---
 // -----------------------------------------------------------------
@@ -207,11 +213,12 @@ void setColor(int red, int green, int blue) {
  * on a topic the client is subscribed to.
  * This REPLACES pollCommand() and is INSTANT.
  */
-void mqttCallback(char* topic, byte* payload, unsigned int length) {
+void mqttCallback(char *topic, byte *payload, unsigned int length)
+{
   Serial.print("Message arrived [");
   Serial.print(topic);
   Serial.print("] ");
-  
+
   // Create a null-terminated string from the payload
   char message[length + 1];
   memcpy(message, payload, length);
@@ -222,29 +229,39 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   StaticJsonDocument<256> doc;
   DeserializationError err = deserializeJson(doc, message);
 
-  if (err) {
+  if (err)
+  {
     Serial.print(F("deserializeJson() failed: "));
     Serial.println(err.c_str());
     return;
   }
 
   const char *action = doc["action"] | "";
-  
+
   // Process the action
-  if (strcmp(action, "auto") == 0) {
+  if (strcmp(action, "auto") == 0)
+  {
     Serial.println("Switched to auto mode");
-    autoMode = true; 
-  } else if (strcmp(action, "setAngle") == 0) {
+    autoMode = true;
+  }
+  else if (strcmp(action, "setAngle") == 0)
+  {
     int tgt = doc["targetPosition"] | currentPosition;
     Serial.printf("Set target position to %d\n", tgt);
-    requestTargetPosition(tgt); 
-  } else if (strcmp(action, "notifyEmpty") == 0) {
+    requestTargetPosition(tgt);
+  }
+  else if (strcmp(action, "notifyEmpty") == 0)
+  {
     Serial.println("Notification: GREEN (Empty)");
     setColor(0, 255, 0);
-  } else if (strcmp(action, "notifyPartial") == 0) {
+  }
+  else if (strcmp(action, "notifyPartial") == 0)
+  {
     Serial.println("Notification: BLUE (Partial)");
     setColor(0, 0, 255);
-  } else if (strcmp(action, "notifyFull") == 0) {
+  }
+  else if (strcmp(action, "notifyFull") == 0)
+  {
     Serial.println("Notification: RED (Full)");
     setColor(255, 0, 0);
   }
@@ -253,32 +270,42 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 /**
  * @brief Configures the MQTT client and sets the callback function.
  */
-void setupMQTT() {
-  mqttClient.setServer(mqtt_server, mqtt_port);
+void setupMQTT()
+{
+  mqttClient.setServer(cfg_mqttURL.c_str(), mqtt_port);
   mqttClient.setCallback(mqttCallback);
-  Serial.println("MQTT Client configured.");
+  Serial.print("MQTT Client configured for broker: ");
+  Serial.println(cfg_mqttURL);
 }
 
 /**
- * @brief Attempts to reconnect to the MQTT broker.
+ * @brief Attempts to reconnect to the MQTT broker with authentication.
  * This is non-blocking and will try once every 5 seconds.
  */
-void reconnectMQTT() {
+void reconnectMQTT()
+{
   // Use a static variable to track last attempt time
   static unsigned long lastReconnectAttempt = 0;
-  if (millis() - lastReconnectAttempt < 5000) {
+  if (millis() - lastReconnectAttempt < 5000)
+  {
     return; // Wait 5 seconds between attempts
   }
   lastReconnectAttempt = millis();
 
-  Serial.print("Attempting MQTT connection...");
-  // Use cfg_deviceID as the unique client ID
-  if (mqttClient.connect(cfg_deviceID.c_str())) {
+  Serial.print("Attempting MQTT connection to ");
+  Serial.print(cfg_mqttURL);
+  Serial.print("...");
+
+  // Use cfg_deviceID as the unique client ID, with authentication
+  if (mqttClient.connect(cfg_deviceID.c_str(), apUser, apPassword))
+  {
     Serial.println("connected");
     // Subscribe to the command topic
     mqttClient.subscribe(MQTT_TOPIC_COMMAND);
     Serial.printf("Subscribed to topic: %s\n", MQTT_TOPIC_COMMAND);
-  } else {
+  }
+  else
+  {
     Serial.print("failed, rc=");
     Serial.print(mqttClient.state());
     Serial.println(" try again in 5 seconds");
@@ -289,20 +316,25 @@ void reconnectMQTT() {
  * @brief Builds the JSON telemetry and publishes it to the telemetry topic.
  * This REPLACES sendSensorData() and is NON-BLOCKING.
  */
-void publishTelemetry() {
-  if (!mqttClient.connected()) {
-     Serial.println("MQTT client not connected. Skipping publish.");
+void publishTelemetry()
+{
+  if (!mqttClient.connected())
+  {
+    Serial.println("MQTT client not connected. Skipping publish.");
     return;
   }
 
   String payload = buildTelemetryJson();
-  
-  if (mqttClient.publish(MQTT_TOPIC_TELEMETRY, payload.c_str())) {
+
+  if (mqttClient.publish(MQTT_TOPIC_TELEMETRY, payload.c_str()))
+  {
     Serial.println("Telemetry published successfully");
     setColor(0, 255, 0); // GREEN = Success
     statusLedTime = millis();
     statusLedActive = true;
-  } else {
+  }
+  else
+  {
     Serial.println("Failed to publish telemetry");
     setColor(255, 0, 0); // RED = Fail
     statusLedTime = millis();
@@ -312,8 +344,8 @@ void publishTelemetry() {
 
 // -----------------------------------------------------------------
 
-
-void setup() {
+void setup()
+{
   Serial.begin(115200);
 
   // setupRGBLED(); // RGB LED setup
@@ -330,19 +362,21 @@ void setup() {
   WiFi.disconnect(); // Clear any previous connection attempts
   delay(100);
 
-  loadConfig();       // Load saved WiFi/server settings from flash
-  setupAP();          // Start Access Point for configuration interface
-  setupWebServer();   // Start HTTP server for web UI
-  connectSTA();       // Attempt to connect to configured WiFi network
+  loadConfig();     // Load saved WiFi/server settings from flash
+  setupAP();        // Start Access Point for configuration interface
+  setupWebServer(); // Start HTTP server for web UI
+  connectSTA();     // Attempt to connect to configured WiFi network
 
   // --- NEW: Setup MQTT after WiFi connects ---
-  if(isWifiConnected()) {
+  if (isWifiConnected())
+  {
     setupMQTT();
   }
   // ------------------------------------------
 }
 
-void readSensor() {
+void readSensor()
+{
   // HC-SR04 ultrasonic sensor trigger sequence
   digitalWrite(trigPin, LOW);
   delayMicroseconds(2); // Clean LOW pulse
@@ -354,7 +388,8 @@ void readSensor() {
   unsigned long durationUs = pulseIn(echoPin, HIGH, ULTRASONIC_TIMEOUT_US);
 
   // Check for timeout or invalid pulse
-  if (durationUs == 0) {
+  if (durationUs == 0)
+  {
     Serial.println("Ultrasonic timeout");
     return; // Keep the last valid distance
   }
@@ -362,57 +397,80 @@ void readSensor() {
   float newDistance = (durationUs * SOUND_SPEED_CM_PER_US) / 2.0f;
 
   // Filter out junk "dead zone" readings (less than 2cm)
-  if (newDistance >= 2.0) {
+  if (newDistance >= 2.0)
+  {
     distance = newDistance;
-  } else {
+  }
+  else
+  {
     // Optional: Log the junk reading for debugging
     // Serial.printf("Junk reading filtered: %.2f cm\n", newDistance);
   }
 }
 
-void checkMotion() {
+void checkMotion()
+{
   int pirReading = digitalRead(pirPin);
   motionDetected = (pirReading == HIGH); // PIR outputs HIGH when motion detected
 
   // Only control servo automatically if in auto mode
-  if (!autoMode) {
+  if (!autoMode)
+  {
     return;
   }
 
   // CASE 1: Servo is at rest (not moving)
-  if (currentPosition == targetPosition) {
-    if (motionDetected) {
-      if (!shouldActivateServo) {
+  if (currentPosition == targetPosition)
+  {
+    if (motionDetected)
+    {
+      if (!shouldActivateServo)
+      {
         shouldActivateServo = true;
         targetPosition = activatedPosition; // Open lid on motion
       }
-    } else {
-      if (shouldActivateServo) {
+    }
+    else
+    {
+      if (shouldActivateServo)
+      {
         shouldActivateServo = false;
         targetPosition = originalPosition; // Close lid when no motion
       }
     }
-  // CASE 2: Servo is currently moving - update state based on motion
-  } else {
-    if (motionDetected) {
+    // CASE 2: Servo is currently moving - update state based on motion
+  }
+  else
+  {
+    if (motionDetected)
+    {
       shouldActivateServo = true; // Keep/set activated state
-    } else {
+    }
+    else
+    {
       shouldActivateServo = false; // Keep/set deactivated state
     }
   }
 }
 
-void moveServo() {
-  if (currentPosition != targetPosition) {
+void moveServo()
+{
+  if (currentPosition != targetPosition)
+  {
     // Gradual movement for smooth operation (servoStep degrees per update)
-    if (currentPosition < targetPosition) {
+    if (currentPosition < targetPosition)
+    {
       currentPosition += servoStep;
-      if (currentPosition > targetPosition) {
+      if (currentPosition > targetPosition)
+      {
         currentPosition = targetPosition; // Clamp to exact target
       }
-    } else {
+    }
+    else
+    {
       currentPosition -= servoStep;
-      if (currentPosition < targetPosition) {
+      if (currentPosition < targetPosition)
+      {
         currentPosition = targetPosition; // Clamp to exact target
       }
     }
@@ -420,15 +478,18 @@ void moveServo() {
   }
 }
 
-void loop() {
+void loop()
+{
   unsigned long currentTime = millis();
 
-  yield(); // Yield to WiFi/system tasks
+  yield();               // Yield to WiFi/system tasks
   server.handleClient(); // Process incoming HTTP requests for config UI
 
   // --- NEW: MQTT Connection Management ---
-  if (isWifiConnected()) {
-    if (!mqttClient.connected()) {
+  if (isWifiConnected())
+  {
+    if (!mqttClient.connected())
+    {
       reconnectMQTT(); // Check connection and reconnect if needed
     }
     mqttClient.loop(); // *CRITICAL* - processes subscriptions and keepalives
@@ -436,20 +497,24 @@ void loop() {
   // -------------------------------------
 
   // Non-blocking task execution
-  if (shouldRun(currentTime, lastSensorReading, sensorInterval)) {
+  if (shouldRun(currentTime, lastSensorReading, sensorInterval))
+  {
     readSensor();
   }
 
-  if (shouldRun(currentTime, lastPirCheck, pirInterval)) {
+  if (shouldRun(currentTime, lastPirCheck, pirInterval))
+  {
     checkMotion();
   }
 
-  if (shouldRun(currentTime, lastServoMove, servoInterval)) {
+  if (shouldRun(currentTime, lastServoMove, servoInterval))
+  {
     moveServo();
   }
 
   // --- MODIFIED: Use publishTelemetry ---
-  if (shouldRun(currentTime, lastDataTransmission, dataInterval)) {
+  if (shouldRun(currentTime, lastDataTransmission, dataInterval))
+  {
     publishTelemetry(); // Replaces sendSensorData()
   }
 
@@ -457,9 +522,10 @@ void loop() {
   // if (shouldRun(currentTime, lastCommandPoll, commandPollInterval)) {
   //   pollCommand();
   // }
-  
+
   // Auto-off status LED after 500ms
-  if (statusLedActive && (currentTime - statusLedTime > 500)) {
+  if (statusLedActive && (currentTime - statusLedTime > 500))
+  {
     setColor(0, 0, 0); // Turn off LED
     statusLedActive = false;
   }
@@ -471,16 +537,18 @@ void loop() {
 // --- but is left in the web UI for future use.     ---
 // -----------------------------------------------------------------
 
-void loadConfig() {
+void loadConfig()
+{
   prefs.begin("trash", true);
   cfg_ssid = prefs.getString("ssid", cfg_ssid);
   cfg_password = prefs.getString("pass", cfg_password);
-  cfg_serverURL = prefs.getString("server", cfg_serverURL); // Not used by MQTT
+  cfg_mqttURL = prefs.getString("mqtt", cfg_mqttURL); // MQTT broker URL
   cfg_deviceID = prefs.getString("device", cfg_deviceID);
   prefs.end();
 }
 
-void setupAP() {
+void setupAP()
+{
   WiFi.softAP(apSsid, apPassword);
   IPAddress ip = WiFi.softAPIP();
   Serial.print("AP SSID: ");
@@ -489,16 +557,20 @@ void setupAP() {
   Serial.println(ip);
 }
 
-bool ensureAuth() {
-  if (server.authenticate(apUser, apPassword)) {
+bool ensureAuth()
+{
+  if (server.authenticate(apUser, apPassword))
+  {
     return true;
   }
   server.requestAuthentication();
   return false;
 }
 
-void setupWebServer() {
-  server.on("/", HTTP_GET, []() {
+void setupWebServer()
+{
+  server.on("/", HTTP_GET, []()
+            {
     if (!ensureAuth())
       return;
     String html =
@@ -526,12 +598,12 @@ void setupWebServer() {
         "</style></head><body>";
     html += "<div class='card card--narrow'>";
     html += "<h1>ESP32 Configuration</h1>";
-    html += "<p class='muted'>Note: MQTT server is hardcoded to test.mosquitto.org</p>"; // Added a note
+    html += "<p class='muted'>Configure WiFi and MQTT broker settings. Uses AP credentials (trash/trash_123) for MQTT authentication.</p>";
     html += "<form method='POST' action='/save' class='controls'>";
     html += "<div class='grid'>";
     html += "<div class='control-group'><label for='ssid'>WiFi SSID</label><input type='text' id='ssid' name='ssid' value='" + cfg_ssid + "'></div>";
     html += "<div class='control-group'><label for='pass'>WiFi Password</label><input type='password' id='pass' name='pass' value='" + cfg_password + "'></div>";
-    html += "<div class='control-group'><label for='server'>Server URL (Not used)</label><input type='url' id='server' name='server' value='" + cfg_serverURL + "'></div>";
+    html += "<div class='control-group'><label for='mqtt'>MQTT Broker URL</label><input type='text' id='mqtt' name='mqtt' value='" + cfg_mqttURL + "' placeholder='test.mosquitto.org'></div>";
     html += "<div class='control-group'><label for='device'>Device ID (MQTT Client ID)</label><input type='text' id='device' name='device' value='" + cfg_deviceID + "'></div>";
     html += "</div>";
     html += "<div class='row mt12'><button class='btn primary' type='submit'>Save & Reboot</button><span class='muted'>AP SSID: " + String(apSsid) + "</span></div>";
@@ -539,29 +611,30 @@ void setupWebServer() {
     html += "</div>";
     html += "</body></html>";
 
-    server.send(200, "text/html", html);
-  });
+    server.send(200, "text/html", html); });
 
-  server.on("/save", HTTP_POST, []() {
+  server.on("/save", HTTP_POST, []()
+            {
     if (!ensureAuth())
       return;
     String nssid = server.hasArg("ssid") ? server.arg("ssid") : "";
     String npass = server.hasArg("pass") ? server.arg("pass") : "";
-    String nserver = server.hasArg("server") ? server.arg("server") : "";
+    String nmqtt = server.hasArg("mqtt") ? server.arg("mqtt") : "";
     String ndevice = server.hasArg("device") ? server.arg("device") : "";
 
-    saveConfig(nssid, npass, nserver, ndevice); 
+    saveConfig(nssid, npass, nmqtt, ndevice); 
     server.send(200, "text/html",
                 "<html><body><h3>Saved. Rebooting...</h3></body></html>");
     delay(1000); 
-    ESP.restart();
-  });
+    ESP.restart(); });
 
-  server.onNotFound([]() { server.send(404, "text/plain", "Not found"); });
+  server.onNotFound([]()
+                    { server.send(404, "text/plain", "Not found"); });
   server.begin();
 }
 
-void connectSTA() {
+void connectSTA()
+{
   if (cfg_ssid.length() == 0)
     return;
   WiFi.begin(cfg_ssid.c_str(), cfg_password.c_str());
@@ -569,38 +642,44 @@ void connectSTA() {
   Serial.println(cfg_ssid);
   unsigned long wifiStartTime = millis();
   while (WiFi.status() != WL_CONNECTED &&
-         (millis() - wifiStartTime) < WIFI_CONNECT_TIMEOUT_MS) {
+         (millis() - wifiStartTime) < WIFI_CONNECT_TIMEOUT_MS)
+  {
     delay(500);
     Serial.print(".");
     yield();
   }
   Serial.println();
-  if (WiFi.status() == WL_CONNECTED) {
+  if (WiFi.status() == WL_CONNECTED)
+  {
     Serial.println("WiFi connected!");
     Serial.print("IP address: ");
     Serial.println(WiFi.localIP());
     configTime(0, 0, "pool.ntp.org", "time.nist.gov");
-    for (int i = 0; i < 10; i++) {
+    for (int i = 0; i < 10; i++)
+    {
       if (timeIsValid())
         break;
       delay(100);
       yield();
     }
-  } else {
+  }
+  else
+  {
     Serial.println("WiFi connection failed!");
   }
 }
 
-void saveConfig(const String &nssid, const String &npass, const String &nserver,
-                const String &ndevice) {
+void saveConfig(const String &nssid, const String &npass, const String &nmqtt,
+                const String &ndevice)
+{
   prefs.begin("trash", false);
   prefs.putString("ssid", nssid);
   prefs.putString("pass", npass);
-  prefs.putString("server", nserver);
+  prefs.putString("mqtt", nmqtt);
   prefs.putString("device", ndevice);
-  prefs.end(); 
+  prefs.end();
   cfg_ssid = nssid;
   cfg_password = npass;
-  cfg_serverURL = nserver;
+  cfg_mqttURL = nmqtt;
   cfg_deviceID = ndevice;
 }
