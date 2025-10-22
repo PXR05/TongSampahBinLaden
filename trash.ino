@@ -1,11 +1,22 @@
 #include <ArduinoJson.h>
 #include <ESP32Servo.h>
-#include <HTTPClient.h>
+// #include <HTTPClient.h> // No longer needed
 #include <Preferences.h>
 #include <WebServer.h>
 #include <WiFi.h>
-
+#include <PubSubClient.h> // <-- ADDED
 #include <time.h>
+
+// --- NEW MQTT Configuration ---
+const char* mqtt_server = "test.mosquitto.org";
+const int mqtt_port = 1883; // Standard unencrypted MQTT port
+// Define your topics
+#define MQTT_TOPIC_TELEMETRY "esp32_trash/telemetry"
+#define MQTT_TOPIC_COMMAND "esp32_trash/command"
+// Create MQTT client objects
+WiFiClient espClient;
+PubSubClient mqttClient(espClient);
+// ----------------------------
 
 constexpr uint32_t NTP_VALID_EPOCH = 1609459200UL; // 2021-01-01 (Unix timestamp to validate NTP sync)
 constexpr unsigned long WIFI_CONNECT_TIMEOUT_MS = 30000UL; // 30 seconds max to connect to WiFi
@@ -23,11 +34,11 @@ constexpr int PWM_RESOLUTION = 8; // 8-bit resolution (0-255 brightness levels)
 constexpr int SERVO_MIN = 0;
 constexpr int SERVO_MAX = 180;
 
-constexpr int HTTP_TIMEOUT_SENSOR_MS = 2000; // Sensor POST can be slower (more data)
-constexpr int HTTP_TIMEOUT_COMMAND_MS = 1500; // Command GET should be fast (polling)
-
-const char *API_SENSOR_PATH = "/api/sensor-data"; // Endpoint to send telemetry
-const char *API_COMMAND_PATH = "/api/command"; // Endpoint to poll for commands
+// --- HTTP Constants Removed ---
+// constexpr int HTTP_TIMEOUT_SENSOR_MS = 2000; 
+// constexpr int HTTP_TIMEOUT_COMMAND_MS = 1500;
+// const char *API_SENSOR_PATH = "/api/sensor-data"; 
+// const char *API_COMMAND_PATH = "/api/command"; 
 
 void loadConfig();
 void setupAP();
@@ -35,7 +46,7 @@ void setupWebServer();
 void connectSTA();
 bool ensureAuth();
 String buildTelemetryJson();
-void configureHttp(HTTPClient &http, const String &url, int timeoutMs);
+// void configureHttp(HTTPClient &http, const String &url, int timeoutMs); // REMOVED
 inline bool isWifiConnected();
 inline bool timeIsValid();
 inline int clampServo(int angle);
@@ -45,13 +56,21 @@ void saveConfig(const String &nssid, const String &npass, const String &nserver,
 void setColor(int red, int green, int blue);
 void setupRGBLED();
 
+// --- NEW MQTT Function Prototypes ---
+void setupMQTT();
+void mqttCallback(char* topic, byte* payload, unsigned int length);
+void reconnectMQTT();
+void publishTelemetry();
+// ----------------------------------
+
+
 Preferences prefs; // Non-volatile storage for configuration persistence
 WebServer server(80); // HTTP server for web-based configuration UI
 
 // Default configuration values (overridden by saved preferences)
 String cfg_ssid = "ssid";
 String cfg_password = "password";
-String cfg_serverURL = "http://10.0.0.2:5000";
+String cfg_serverURL = "http://10.0.0.2:5000"; // No longer used, but kept for AP config
 String cfg_deviceID = "esp32_trash";
 
 // Access Point credentials (for configuration mode)
@@ -73,32 +92,31 @@ Servo servo;
 // State tracking
 bool motionDetected = false; // Latest PIR sensor reading
 bool autoMode = true;        // Auto mode: servo opens on motion, closes when no motion
-uint32_t lastCommandId = 0;  // Tracks last processed command ID (prevents re-execution)
+// uint32_t lastCommandId = 0;  // No longer needed for MQTT
 
 // Non-blocking task scheduling (millis-based timestamps)
-unsigned long lastSensorReading = 0;     // Last ultrasonic sensor read time
-unsigned long lastServoMove = 0;         // Last servo position update time
-unsigned long lastPirCheck = 0;          // Last PIR motion check time
-unsigned long lastDataTransmission = 0;  // Last server data transmission time
-unsigned long sensorInterval = 1000;     // Read distance every 1 second
-unsigned long servoInterval = 50;        // Update servo every 50ms (smooth movement)
-unsigned long pirInterval = 100;         // Check motion every 100ms
-unsigned long dataInterval = 1000;       // Send data to server every 1 second
-unsigned long commandPollInterval = 500; // Poll for commands every 500ms
-unsigned long lastCommandPoll = 0;       // Last command poll time
-unsigned long statusLedTime = 0;         // When status LED was activated
-bool statusLedActive = false;            // Whether status LED is currently on
+unsigned long lastSensorReading = 0;    // Last ultrasonic sensor read time
+unsigned long lastServoMove = 0;        // Last servo position update time
+unsigned long lastPirCheck = 0;         // Last PIR motion check time
+unsigned long lastDataTransmission = 0; // Last server data transmission time
+unsigned long sensorInterval = 1000;    // Read distance every 1 second
+unsigned long servoInterval = 50;       // Update servo every 50ms (smooth movement)
+unsigned long pirInterval = 100;        // Check motion every 100ms
+unsigned long dataInterval = 1000;      // Send data to server every 1 second
+// unsigned long commandPollInterval = 500; // REMOVED
+// unsigned long lastCommandPoll = 0;       // REMOVED
+unsigned long statusLedTime = 0;        // When status LED was activated
+bool statusLedActive = false;           // Whether status LED is currently on
 
 // Servo control state
-int currentPosition = 0;         // Current servo angle (0-180°)
-int targetPosition = 0;          // Desired servo angle
-int servoStep = 10;              // Degrees to move per update (controls speed)
+int currentPosition = 0;     // Current servo angle (0-180°)
+int targetPosition = 0;      // Desired servo angle
+int servoStep = 10;          // Degrees to move per update (controls speed)
 bool shouldActivateServo = false; // Whether servo should be in activated state
-int originalPosition = 0;        // Closed/resting position (lid closed)
-int activatedPosition = 90;      // Open position (lid open for trash disposal)
+int originalPosition = 0;    // Closed/resting position (lid closed)
+int activatedPosition = 90;  // Open position (lid open for trash disposal)
 
 // Non-blocking task scheduler helper: checks if enough time has elapsed
-// Updates 'last' timestamp and returns true when interval has passed
 inline bool shouldRun(const unsigned long now, unsigned long &last,
                       const unsigned long interval) {
   if (now - last >= interval) {
@@ -126,29 +144,23 @@ void requestTargetPosition(int targetAngle) {
   }
 }
 
-void configureHttp(HTTPClient &http, const String &url, int timeoutMs) {
-  http.begin(url);
-  http.addHeader("Connection", "keep-alive"); // Enable HTTP keep-alive for efficiency
-  http.setReuse(true); // Reuse TCP connection across requests
-  http.setTimeout(timeoutMs);
-}
+// void configureHttp(...) // REMOVED
 
 String buildTelemetryJson() {
   DynamicJsonDocument doc(256);
   doc["deviceId"] = cfg_deviceID.c_str();
   time_t nowSec = time(nullptr);
-  // Only include timestamp if NTP sync successful (avoids sending invalid times)
   if (nowSec > NTP_VALID_EPOCH) {
     doc["deviceTimestamp"] = (uint32_t)nowSec;
   }
-  doc["deviceUptimeMs"] = millis(); // Device uptime for debugging connection issues
+  doc["deviceUptimeMs"] = millis();
   doc["distance"] = distance;
   doc["motion"] = motionDetected;
   doc["servoPosition"] = currentPosition;
   doc["targetPosition"] = targetPosition;
   doc["shouldActivateServo"] = shouldActivateServo;
   doc["autoMode"] = autoMode;
-  doc["lastCommandId"] = lastCommandId; // Echo back for server-side validation
+  // doc["lastCommandId"] = lastCommandId; // REMOVED
 
   String jsonString;
   serializeJson(doc, jsonString);
@@ -156,117 +168,155 @@ String buildTelemetryJson() {
 }
 
 void setColor(int red, int green, int blue) {
-
   // ini kalo kebalik yg shared pin nya common anode (+3,3V ON 0 OFF 255)
   // red   = 255 - red;
   // green = 255 - green;
   // blue  = 255 - blue;
 
   // kl yg ini GND Yg normal cathode
-  // ledcWrite(RED_CHANNEL, red);
-  // ledcWrite(GREEN_CHANNEL, green);
-  // ledcWrite(BLUE_CHANNEL, blue);
+  ledcWrite(RED_CHANNEL, red);
+  ledcWrite(GREEN_CHANNEL, green);
+  ledcWrite(BLUE_CHANNEL, blue);
 }
 
-void setupRGBLED() {
-  // ledcSetup(RED_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
-  // ledcSetup(GREEN_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
-  // ledcSetup(BLUE_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
+// void setupRGBLED() {
+//   // --- UN-COMMENTED ---
+//   ledcSetup(RED_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
+//   ledcSetup(GREEN_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
+//   ledcSetup(BLUE_CHANNEL, PWM_FREQ, PWM_RESOLUTION);
 
-  // TODO: cobain ini kalo gabisa -> dari docs forum
-  // ledcAttach(LEDC_PIN, 50, LEDC_RESOLUTION);
-  // ledcAttach(notifyPinRed, PWM_FREQ, RED_CHANNEL);
-  // ledcAttach(notifyPinGreen, PWM_FREQ, GREEN_CHANNEL);
-  // ledcAttach(notifyPinBlue, PWM_FREQ, BLUE_CHANNEL);
+//   ledcAttachPin(notifyPinRed, RED_CHANNEL);
+//   ledcAttachPin(notifyPinGreen, GREEN_CHANNEL);
+//   ledcAttachPin(notifyPinBlue, BLUE_CHANNEL);
+//   // -------------------
 
-  setColor(0, 0, 0);
-}
+//   setColor(0, 0, 0);
+// }
 
-void sendSensorData() {
-  if (!isWifiConnected())
+// void sendSensorData() // REMOVED
+
+// void pollCommand() // REMOVED
+
+
+// -----------------------------------------------------------------
+// --- NEW MQTT Functions ---
+// -----------------------------------------------------------------
+
+/**
+ * @brief This function is called automatically when a message arrives
+ * on a topic the client is subscribed to.
+ * This REPLACES pollCommand() and is INSTANT.
+ */
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  Serial.print("Message arrived [");
+  Serial.print(topic);
+  Serial.print("] ");
+  
+  // Create a null-terminated string from the payload
+  char message[length + 1];
+  memcpy(message, payload, length);
+  message[length] = '\0';
+  Serial.println(message);
+
+  // Parse the JSON payload
+  StaticJsonDocument<256> doc;
+  DeserializationError err = deserializeJson(doc, message);
+
+  if (err) {
+    Serial.print(F("deserializeJson() failed: "));
+    Serial.println(err.c_str());
     return;
+  }
 
-  HTTPClient http;
-  configureHttp(http, String(cfg_serverURL) + API_SENSOR_PATH,
-                HTTP_TIMEOUT_SENSOR_MS);
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("Authorization", String("Bearer ") + apPassword); // Bearer token auth
+  const char *action = doc["action"] | "";
+  
+  // Process the action
+  if (strcmp(action, "auto") == 0) {
+    Serial.println("Switched to auto mode");
+    autoMode = true; 
+  } else if (strcmp(action, "setAngle") == 0) {
+    int tgt = doc["targetPosition"] | currentPosition;
+    Serial.printf("Set target position to %d\n", tgt);
+    requestTargetPosition(tgt); 
+  } else if (strcmp(action, "notifyEmpty") == 0) {
+    Serial.println("Notification: GREEN (Empty)");
+    setColor(0, 255, 0);
+  } else if (strcmp(action, "notifyPartial") == 0) {
+    Serial.println("Notification: BLUE (Partial)");
+    setColor(0, 0, 255);
+  } else if (strcmp(action, "notifyFull") == 0) {
+    Serial.println("Notification: RED (Full)");
+    setColor(255, 0, 0);
+  }
+}
+
+/**
+ * @brief Configures the MQTT client and sets the callback function.
+ */
+void setupMQTT() {
+  mqttClient.setServer(mqtt_server, mqtt_port);
+  mqttClient.setCallback(mqttCallback);
+  Serial.println("MQTT Client configured.");
+}
+
+/**
+ * @brief Attempts to reconnect to the MQTT broker.
+ * This is non-blocking and will try once every 5 seconds.
+ */
+void reconnectMQTT() {
+  // Use a static variable to track last attempt time
+  static unsigned long lastReconnectAttempt = 0;
+  if (millis() - lastReconnectAttempt < 5000) {
+    return; // Wait 5 seconds between attempts
+  }
+  lastReconnectAttempt = millis();
+
+  Serial.print("Attempting MQTT connection...");
+  // Use cfg_deviceID as the unique client ID
+  if (mqttClient.connect(cfg_deviceID.c_str())) {
+    Serial.println("connected");
+    // Subscribe to the command topic
+    mqttClient.subscribe(MQTT_TOPIC_COMMAND);
+    Serial.printf("Subscribed to topic: %s\n", MQTT_TOPIC_COMMAND);
+  } else {
+    Serial.print("failed, rc=");
+    Serial.print(mqttClient.state());
+    Serial.println(" try again in 5 seconds");
+  }
+}
+
+/**
+ * @brief Builds the JSON telemetry and publishes it to the telemetry topic.
+ * This REPLACES sendSensorData() and is NON-BLOCKING.
+ */
+void publishTelemetry() {
+  if (!mqttClient.connected()) {
+     Serial.println("MQTT client not connected. Skipping publish.");
+    return;
+  }
 
   String payload = buildTelemetryJson();
-
-  int httpResponseCode = http.POST(payload);
-  if (httpResponseCode == 200) {
-    Serial.println("Sensor data sent successfully");
+  
+  if (mqttClient.publish(MQTT_TOPIC_TELEMETRY, payload.c_str())) {
+    Serial.println("Telemetry published successfully");
     setColor(0, 255, 0); // GREEN = Success
     statusLedTime = millis();
     statusLedActive = true;
-  } else if (httpResponseCode == 401) {
-    Serial.println("Authentication failed - check apPassword");
-    setColor(255, 255, 0); // YELLOW = Auth error
-    statusLedTime = millis();
-    statusLedActive = true;
-  } else if (httpResponseCode > 0) {
-    Serial.printf("HTTP error: %d - %s\n", httpResponseCode, http.getString().c_str());
-    setColor(255, 0, 0); // RED = HTTP error
-    statusLedTime = millis();
-    statusLedActive = true;
   } else {
-    Serial.printf("Connection error: %d\n", httpResponseCode);
-    setColor(255, 0, 255); // MAGENTA = Connection error
+    Serial.println("Failed to publish telemetry");
+    setColor(255, 0, 0); // RED = Fail
     statusLedTime = millis();
     statusLedActive = true;
   }
-
-  http.end();
 }
 
-void pollCommand() {
-  if (!isWifiConnected())
-    return;
+// -----------------------------------------------------------------
 
-  HTTPClient http;
-  // Include lastId in query to prevent re-processing same command
-  String url = String(cfg_serverURL) + API_COMMAND_PATH +
-               "?deviceId=" + cfg_deviceID + "&lastId=" + String(lastCommandId);
-  configureHttp(http, url, HTTP_TIMEOUT_COMMAND_MS);
-  int code = http.GET();
-  if (code == 200) {
-    String payload = http.getString();
-    StaticJsonDocument<256> doc;
-    DeserializationError err = deserializeJson(doc, payload);
-    if (!err) {
-      uint32_t cmdId = doc["commandId"] | 0;
-      const char *action = doc["action"] | "";
-      // Only process if this is a new command (higher ID than last processed)
-      if (cmdId > lastCommandId) {
-        lastCommandId = cmdId; // Update to prevent re-execution
-        if (strcmp(action, "auto") == 0) {
-          Serial.println("Switched to auto mode");
-          autoMode = true; // Resume motion-based automation
-        } else if (strcmp(action, "setAngle") == 0) {
-          int tgt = doc["targetPosition"] | currentPosition;
-          Serial.printf("Set target position to %d\n", tgt);
-          requestTargetPosition(tgt); // Manual servo control
-        } else if (strcmp(action, "notifyEmpty") == 0) {
-          Serial.println("Notification: GREEN (Empty)");
-          setColor(0, 255, 0);
-        } else if (strcmp(action, "notifyPartial") == 0) {
-          Serial.println("Notification: BLUE (Partial)");
-          setColor(0, 0, 255);
-        } else if (strcmp(action, "notifyFull") == 0) {
-          Serial.println("Notification: RED (Full)");
-          setColor(255, 0, 0);
-        }
-      }
-    }
-  }
-  http.end();
-}
 
 void setup() {
   Serial.begin(115200);
 
-  setupRGBLED(); // RGB LED setup
+  // setupRGBLED(); // RGB LED setup
 
   // Configure sensor and actuator pins
   pinMode(trigPin, OUTPUT);
@@ -280,18 +330,19 @@ void setup() {
   WiFi.disconnect(); // Clear any previous connection attempts
   delay(100);
 
-  loadConfig();      // Load saved WiFi/server settings from flash
-  setupAP();         // Start Access Point for configuration interface
-  setupWebServer();  // Start HTTP server for web UI
-  connectSTA();      // Attempt to connect to configured WiFi network
+  loadConfig();       // Load saved WiFi/server settings from flash
+  setupAP();          // Start Access Point for configuration interface
+  setupWebServer();   // Start HTTP server for web UI
+  connectSTA();       // Attempt to connect to configured WiFi network
+
+  // --- NEW: Setup MQTT after WiFi connects ---
+  if(isWifiConnected()) {
+    setupMQTT();
+  }
+  // ------------------------------------------
 }
 
 void readSensor() {
-  // Don't read distance when lid is open (servo activated) - prevents false readings
-  // if (shouldActivateServo || currentPosition != originalPosition) {
-  //   return;
-  // }
-
   // HC-SR04 ultrasonic sensor trigger sequence
   digitalWrite(trigPin, LOW);
   delayMicroseconds(2); // Clean LOW pulse
@@ -301,7 +352,22 @@ void readSensor() {
 
   // Measure echo pulse width (time for sound to travel to object and back)
   unsigned long durationUs = pulseIn(echoPin, HIGH, ULTRASONIC_TIMEOUT_US);
-  distance = (durationUs * SOUND_SPEED_CM_PER_US) / 2.0f;
+
+  // Check for timeout or invalid pulse
+  if (durationUs == 0) {
+    Serial.println("Ultrasonic timeout");
+    return; // Keep the last valid distance
+  }
+
+  float newDistance = (durationUs * SOUND_SPEED_CM_PER_US) / 2.0f;
+
+  // Filter out junk "dead zone" readings (less than 2cm)
+  if (newDistance >= 2.0) {
+    distance = newDistance;
+  } else {
+    // Optional: Log the junk reading for debugging
+    // Serial.printf("Junk reading filtered: %.2f cm\n", newDistance);
+  }
 }
 
 void checkMotion() {
@@ -350,7 +416,6 @@ void moveServo() {
         currentPosition = targetPosition; // Clamp to exact target
       }
     }
-
     servo.write(currentPosition); // Apply new position
   }
 }
@@ -358,30 +423,41 @@ void moveServo() {
 void loop() {
   unsigned long currentTime = millis();
 
-  yield(); // Yield to WiFi/system tasks (prevents watchdog timeout)
+  yield(); // Yield to WiFi/system tasks
   server.handleClient(); // Process incoming HTTP requests for config UI
 
-  // Non-blocking task execution using time-based scheduling
+  // --- NEW: MQTT Connection Management ---
+  if (isWifiConnected()) {
+    if (!mqttClient.connected()) {
+      reconnectMQTT(); // Check connection and reconnect if needed
+    }
+    mqttClient.loop(); // *CRITICAL* - processes subscriptions and keepalives
+  }
+  // -------------------------------------
+
+  // Non-blocking task execution
   if (shouldRun(currentTime, lastSensorReading, sensorInterval)) {
-    readSensor(); // Read ultrasonic distance sensor
+    readSensor();
   }
 
   if (shouldRun(currentTime, lastPirCheck, pirInterval)) {
-    checkMotion(); // Check PIR sensor and update servo state
+    checkMotion();
   }
 
   if (shouldRun(currentTime, lastServoMove, servoInterval)) {
-    moveServo(); // Incrementally move servo to target position
+    moveServo();
   }
 
+  // --- MODIFIED: Use publishTelemetry ---
   if (shouldRun(currentTime, lastDataTransmission, dataInterval)) {
-    sendSensorData(); // POST telemetry to server
+    publishTelemetry(); // Replaces sendSensorData()
   }
 
-  if (shouldRun(currentTime, lastCommandPoll, commandPollInterval)) {
-    pollCommand(); // GET pending commands from server
-  }
-
+  // --- REMOVED: pollCommand() is no longer needed ---
+  // if (shouldRun(currentTime, lastCommandPoll, commandPollInterval)) {
+  //   pollCommand();
+  // }
+  
   // Auto-off status LED after 500ms
   if (statusLedActive && (currentTime - statusLedTime > 500)) {
     setColor(0, 0, 0); // Turn off LED
@@ -389,38 +465,42 @@ void loop() {
   }
 }
 
+// -----------------------------------------------------------------
+// --- Config & Web Server Functions (Unchanged) ---
+// --- Note: cfg_serverURL is no longer used by MQTT ---
+// --- but is left in the web UI for future use.     ---
+// -----------------------------------------------------------------
+
 void loadConfig() {
-  prefs.begin("trash", true); // Open preferences in read-only mode (true)
-  cfg_ssid = prefs.getString("ssid", cfg_ssid);           // Load or use default
+  prefs.begin("trash", true);
+  cfg_ssid = prefs.getString("ssid", cfg_ssid);
   cfg_password = prefs.getString("pass", cfg_password);
-  cfg_serverURL = prefs.getString("server", cfg_serverURL);
+  cfg_serverURL = prefs.getString("server", cfg_serverURL); // Not used by MQTT
   cfg_deviceID = prefs.getString("device", cfg_deviceID);
-  prefs.end(); // Close preferences to free resources
+  prefs.end();
 }
 
 void setupAP() {
-  WiFi.softAP(apSsid, apPassword); // Start Access Point for configuration
-  IPAddress ip = WiFi.softAPIP();  // Typically 192.168.4.1
+  WiFi.softAP(apSsid, apPassword);
+  IPAddress ip = WiFi.softAPIP();
   Serial.print("AP SSID: ");
   Serial.println(apSsid);
   Serial.print("AP IP: ");
-  Serial.println(ip); // Connect to this IP to access config UI
+  Serial.println(ip);
 }
 
 bool ensureAuth() {
   if (server.authenticate(apUser, apPassword)) {
-    return true; // Authentication successful
+    return true;
   }
-  server.requestAuthentication(); // Send 401 with WWW-Authenticate header
-  return false; // Caller should return early
+  server.requestAuthentication();
+  return false;
 }
 
 void setupWebServer() {
-  // GET /: Serve configuration web UI (requires HTTP Basic Auth)
   server.on("/", HTTP_GET, []() {
-    if (!ensureAuth()) // Protect config page with authentication
+    if (!ensureAuth())
       return;
-
     String html =
         "<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'>"
         "<meta name='viewport' content='width=device-width, initial-scale=1'>"
@@ -431,7 +511,7 @@ void setupWebServer() {
         ".card{background:var(--card-bg);border:1px solid var(--border);border-radius:8px;padding:16px;max-width:1200px;margin:0 auto;}"
         ".card--narrow{max-width:800px;}"
         "h1{font-size:20px;margin:0 0 12px;}"
-        ".row{display:flex;gap:12px;flex-wrap:wrap;align-items:center;margin-bottom:12px;}"
+        ".row{display:flex;gap:12px;flex-wrap:wrap;align-itemsS:center;margin-bottom:12px;}"
         ".controls{padding:12px;border:1px solid #e5e7eb;border-radius:12px;background:#f9fafb;margin-top:12px;}"
         ".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px;}"
         ".control-group{display:flex;flex-direction:column;gap:8px;min-width:220px;flex:1}"
@@ -444,15 +524,15 @@ void setupWebServer() {
         ".muted{color:var(--muted);font-size:12px;}"
         ".mt12{margin-top:12px;}"
         "</style></head><body>";
-
     html += "<div class='card card--narrow'>";
     html += "<h1>ESP32 Configuration</h1>";
+    html += "<p class='muted'>Note: MQTT server is hardcoded to test.mosquitto.org</p>"; // Added a note
     html += "<form method='POST' action='/save' class='controls'>";
     html += "<div class='grid'>";
     html += "<div class='control-group'><label for='ssid'>WiFi SSID</label><input type='text' id='ssid' name='ssid' value='" + cfg_ssid + "'></div>";
     html += "<div class='control-group'><label for='pass'>WiFi Password</label><input type='password' id='pass' name='pass' value='" + cfg_password + "'></div>";
-    html += "<div class='control-group'><label for='server'>Server URL</label><input type='url' id='server' name='server' value='" + cfg_serverURL + "'></div>";
-    html += "<div class='control-group'><label for='device'>Device ID</label><input type='text' id='device' name='device' value='" + cfg_deviceID + "'></div>";
+    html += "<div class='control-group'><label for='server'>Server URL (Not used)</label><input type='url' id='server' name='server' value='" + cfg_serverURL + "'></div>";
+    html += "<div class='control-group'><label for='device'>Device ID (MQTT Client ID)</label><input type='text' id='device' name='device' value='" + cfg_deviceID + "'></div>";
     html += "</div>";
     html += "<div class='row mt12'><button class='btn primary' type='submit'>Save & Reboot</button><span class='muted'>AP SSID: " + String(apSsid) + "</span></div>";
     html += "</form>";
@@ -462,79 +542,63 @@ void setupWebServer() {
     server.send(200, "text/html", html);
   });
 
-  // POST /save: Save configuration and reboot device
   server.on("/save", HTTP_POST, []() {
     if (!ensureAuth())
       return;
-
-    // Extract form parameters
     String nssid = server.hasArg("ssid") ? server.arg("ssid") : "";
     String npass = server.hasArg("pass") ? server.arg("pass") : "";
     String nserver = server.hasArg("server") ? server.arg("server") : "";
     String ndevice = server.hasArg("device") ? server.arg("device") : "";
 
-    saveConfig(nssid, npass, nserver, ndevice); // Persist to flash
-
+    saveConfig(nssid, npass, nserver, ndevice); 
     server.send(200, "text/html",
                 "<html><body><h3>Saved. Rebooting...</h3></body></html>");
-
-    delay(1000); // Allow response to be sent
-
-    ESP.restart(); // Reboot to apply new WiFi settings
+    delay(1000); 
+    ESP.restart();
   });
 
   server.onNotFound([]() { server.send(404, "text/plain", "Not found"); });
-  server.begin(); // Start HTTP server on port 80
+  server.begin();
 }
 
 void connectSTA() {
-  if (cfg_ssid.length() == 0) // Skip if no SSID configured
+  if (cfg_ssid.length() == 0)
     return;
-
   WiFi.begin(cfg_ssid.c_str(), cfg_password.c_str());
   Serial.print("Connecting to WiFi: ");
   Serial.println(cfg_ssid);
-
   unsigned long wifiStartTime = millis();
-
-  // Non-blocking wait with timeout
   while (WiFi.status() != WL_CONNECTED &&
          (millis() - wifiStartTime) < WIFI_CONNECT_TIMEOUT_MS) {
     delay(500);
     Serial.print(".");
-    yield(); // Allow background WiFi tasks to run
+    yield();
   }
-
   Serial.println();
   if (WiFi.status() == WL_CONNECTED) {
     Serial.println("WiFi connected!");
     Serial.print("IP address: ");
     Serial.println(WiFi.localIP());
-    // Sync time via NTP (needed for device timestamps)
     configTime(0, 0, "pool.ntp.org", "time.nist.gov");
-    // Wait up to 1 second for NTP sync
     for (int i = 0; i < 10; i++) {
-      if (timeIsValid()) // Check if time is valid (> 2021)
+      if (timeIsValid())
         break;
       delay(100);
       yield();
     }
   } else {
     Serial.println("WiFi connection failed!");
-    // Device continues to operate in AP mode for configuration
   }
 }
 
 void saveConfig(const String &nssid, const String &npass, const String &nserver,
                 const String &ndevice) {
-  prefs.begin("trash", false); // Open in read-write mode (false)
+  prefs.begin("trash", false);
   prefs.putString("ssid", nssid);
   prefs.putString("pass", npass);
   prefs.putString("server", nserver);
   prefs.putString("device", ndevice);
-  prefs.end(); // Commit to flash
-
-  // Update runtime configuration (applied after reboot)
+  prefs.end(); 
   cfg_ssid = nssid;
   cfg_password = npass;
   cfg_serverURL = nserver;

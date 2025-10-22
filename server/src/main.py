@@ -467,6 +467,7 @@ def mem_hist(device_id: str, limit: int) -> list[dict[str, CSVValue]]:
             "servoPosition": p.get("servoPosition"),
             "motion": p.get("motion"),
             "regressionFullness": p.get("regressionFullness"),
+            "fillstatus": p.get("fillStatus"),
         }
         for p in mem_series
     ]
