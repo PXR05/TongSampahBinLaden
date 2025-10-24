@@ -17,7 +17,10 @@ from flask import Flask, jsonify, render_template, request, Response
 
 from .models.fuzzy_model import compute_fullness
 from .models.regression_model import predict_fullness
-from .models.time_prediction_model import train_fullness_prediction_model, predict_time_to_full
+from .models.time_prediction_model import (
+    train_fullness_prediction_model,
+    predict_time_to_full,
+)
 import joblib
 from threading import Thread
 import time as _time
@@ -49,14 +52,16 @@ success = load_dotenv()
 if not success:
     print("Warning: .env file not found or could not be loaded.")
 
+SITE_AUTH_USER = os.getenv("SITE_AUTH_USER", "trash")
+SITE_AUTH_PASS = os.getenv("SITE_AUTH_PASS", "trash_123")
+
 # MQTT Configuration
-MQTT_BROKER = "34.101.81.128"
-MQTT_PORT = 1883
-MQTT_USERNAME = "trash"
-MQTT_PASSWORD = "trash_123"
-MQTT_TOPIC_SENSOR = "esp32_trash/telemetry"  # + is wildcard for device_id
-MQTT_TOPIC_COMMAND = "esp32_trash/command"  # + is wildcard for device_id
-MQTT_TOPIC_COMMAND_RESPONSE = "tongsampahbinladen/command/{}/response"  # {} will be replaced with device_id
+MQTT_BROKER = os.getenv("MQTT_BROKER", "test.mosquitto.org")
+MQTT_PORT = int(os.getenv("MQTT_PORT", 1883))
+MQTT_USERNAME = os.getenv("MQTT_USERNAME", "trash")
+MQTT_PASSWORD = os.getenv("MQTT_PASSWORD", "trash_123")
+MQTT_TOPIC_SENSOR = os.getenv("MQTT_TOPIC_SENSOR", "esp32_trash/telemetry")
+MQTT_TOPIC_COMMAND = os.getenv("MQTT_TOPIC_COMMAND", "esp32_trash/command")
 
 app = Flask(__name__)
 app.config["JSONIFY_PRETTYPRINT_REGULAR"] = False
@@ -101,43 +106,45 @@ mqtt_client: mqtt.Client | None = None
 
 def setup_mqtt() -> mqtt.Client:
     """Initialize and configure MQTT client with authentication."""
-    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-    
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2) # type: ignore
+
     # Set username and password for MQTT authentication
     client.username_pw_set(MQTT_USERNAME, MQTT_PASSWORD)
-    
+
     def on_connect(client, userdata, flags, reason_code, properties):
         """Callback when MQTT client connects to broker."""
         if reason_code == 0:
-            print(f"Connected to MQTT Broker at {MQTT_BROKER}:{MQTT_PORT} (authenticated as {MQTT_USERNAME})")
+            print(
+                f"Connected to MQTT Broker at {MQTT_BROKER}:{MQTT_PORT} (authenticated as {MQTT_USERNAME})"
+            )
             # Subscribe to sensor data and command topics
             client.subscribe(MQTT_TOPIC_SENSOR)
             print(f"Subscribed to {MQTT_TOPIC_SENSOR}")
         else:
             print(f"Failed to connect to MQTT Broker, return code {reason_code}")
-    
+
     def on_message(client, userdata, msg):
         """Callback when a message is received on subscribed topics."""
         try:
             topic = msg.topic
-            payload = msg.payload.decode('utf-8')
-            
+            payload = msg.payload.decode("utf-8")
+
             # Handle sensor data messages
             if topic.startswith("esp32_trash/telemetry"):
-                device_id = topic.split('/')[-1]
+                device_id = topic.split("/")[-1]
                 handle_mqtt_sensor_data(device_id, payload)
-            
+
         except Exception as e:
             print(f"Error processing MQTT message: {e}")
-    
+
     def on_disconnect(client, userdata, flags, reason_code, properties):
         """Callback when MQTT client disconnects."""
         print(f"Disconnected from MQTT Broker with reason code {reason_code}")
-    
+
     client.on_connect = on_connect
     client.on_message = on_message
     client.on_disconnect = on_disconnect
-    
+
     return client
 
 
@@ -146,16 +153,15 @@ def handle_mqtt_sensor_data(device_id: str, payload: str) -> None:
     try:
         data = json.loads(payload)
         now = datetime.now().isoformat()
-        
+
         # Add device ID if not present
         if "deviceId" not in data:
             data["deviceId"] = device_id
-        
+
         # Augment device data with server-side calculations
         data["serverTimestamp"] = now
         dist_val = pfloat(data.get("distance"))
         thr = pfloat(settings.get("thresholdCm"), 5) or 5
-        empty_thr = pfloat(settings.get("emptyThresholdCm"), 15) or 15
         is_full = 1 if (dist_val is not None and dist_val <= thr) else 0
 
         fullness_percent = compute_fullness(dist_val)
@@ -210,9 +216,9 @@ def handle_mqtt_sensor_data(device_id: str, payload: str) -> None:
 
         # Update the in-memory data for the device
         device_data[device_id] = data
-        
+
         print(f"Processed sensor data from device {device_id} via MQTT")
-        
+
     except json.JSONDecodeError as e:
         print(f"Invalid JSON in MQTT sensor data: {e}")
     except Exception as e:
@@ -225,12 +231,12 @@ def publish_command_mqtt(device_id: str, command: dict[str, JSONLike]) -> bool:
     if mqtt_client is None or not mqtt_client.is_connected():
         print("MQTT client not connected, cannot publish command")
         return False
-    
+
     try:
-        topic = f"esp32_trash/command"
+        topic = "esp32_trash/command"
         payload = json.dumps(command)
         result = mqtt_client.publish(topic, payload, qos=1)
-        
+
         if result.rc == mqtt.MQTT_ERR_SUCCESS:
             print(f"Published command to {topic}: {payload}")
             return True
@@ -341,10 +347,10 @@ def enqueue_command(
     }
     # Overwrites any previous command for this device
     device_commands[device_id] = command
-    
+
     # Publish via MQTT
     publish_command_mqtt(device_id, command)
-    
+
     return command
 
 
@@ -669,121 +675,82 @@ def mem_hist_page(
     return rows, total
 
 
-@app.route("/api/sensor-data", methods=["POST"])
-def sensor_in():
-    """
-    Main endpoint for IoT devices to post sensor data.
-    Processes data, stores it in memory & CSV, evaluates alerts.
-    NOTE: This HTTP endpoint is kept for backward compatibility.
-    Devices should use MQTT: tongsampahbinladen/sensor/{deviceId}
-    """
-    # Bearer token authentication for device API
-    auth_header = request.headers.get("Authorization")
-    if not auth_header or auth_header != f"Bearer {SITE_AUTH_PASS}":
-        return err("Unauthorized", 401)
-
-    data = json_in()
-    if not data:
-        return err("No data provided", 400)
-
-    device_id = str(data.get("deviceId") or "unknown")
-    
-    # Use the same handler as MQTT
-    payload = json.dumps(data)
-    handle_mqtt_sensor_data(device_id, payload)
-
-    return jsonify({"status": "ok", "deviceId": device_id, "serverTimestamp": datetime.now().isoformat(), "note": "Consider using MQTT: tongsampahbinladen/sensor/{deviceId}"})
-
-
 @app.route("/api/time-to-full")
 def time_to_full_api():
     """Return the current predicted time (hours) until bin is full."""
     if time_to_full_hours is None:
-        return jsonify({"time_to_full_hours": None, "message": "Prediction not available."})
+        return jsonify(
+            {"time_to_full_hours": None, "message": "Prediction not available."}
+        )
     if time_to_full_hours == float("inf"):
-        return jsonify({"time_to_full_hours": "inf", "message": "Not filling / static level."})
+        return jsonify(
+            {"time_to_full_hours": "inf", "message": "Not filling / static level."}
+        )
     return jsonify({"time_to_full_hours": time_to_full_hours})
 
 
-@app.route("/api/command", methods=["POST", "GET"])
+@app.route("/api/command", methods=["POST"])
 def command_api():
     """
-    Dual-purpose endpoint:
-    POST: Web dashboard sends commands to be queued for devices (also publishes via MQTT)
-    GET: IoT devices poll for pending commands (long-polling pattern - for backward compatibility)
-    NOTE: Devices should subscribe to MQTT: tongsampahbinladen/command/{deviceId}
+    Web dashboard sends commands to be queued for devices (also publishes via MQTT)
     """
-    if request.method == "POST":
-        # POST: Enqueue command from dashboard (requires auth)
-        auth = request.authorization
-        if (
-            not auth
-            or auth.username != SITE_AUTH_USER
-            or auth.password != SITE_AUTH_PASS
-        ):
-            return auth_resp()
+    if not request.method == "POST":
+        return err("Invalid request method", 405)
 
-        data = json_in()
-        device_id = data.get("deviceId")
-        if not device_id or not isinstance(device_id, str):
-            return err("deviceId required", 400)
+    # Enqueue command from dashboard (requires auth)
+    auth = request.authorization
+    if (
+        not auth
+        or auth.username != SITE_AUTH_USER
+        or auth.password != SITE_AUTH_PASS
+    ):
+        return auth_resp()
 
-        action = str(data.get("action") or "").strip() or "setAngle"
-        target = data.get("targetPosition")
+    data = json_in()
+    device_id = data.get("deviceId")
+    if not device_id or not isinstance(device_id, str):
+        return err("deviceId required", 400)
 
-        # Normalize action aliases to standard commands
-        if action in ("open", "activate") and target is None:
-            target = 90
-            action = "setAngle"
-        elif action in ("close", "deactivate") and target is None:
-            target = 0
-            action = "setAngle"
+    action = str(data.get("action") or "").strip() or "setAngle"
+    target = data.get("targetPosition")
 
-        # Build command payload based on action type
-        if action == "auto":
-            payload: dict[str, JSONLike] = {"action": "auto"}
-        elif action == "notify":
-            payload = {"action": "notify"}
-        else:
-            # Default to setAngle with position validation
-            t_raw = target
-            if t_raw is None or not isinstance(t_raw, (int, float, str, bool)):
-                return jsonify(
-                    {"error": "targetPosition required/int for setAngle"}
-                ), 400
+    # Normalize action aliases to standard commands
+    if action in ("open", "activate") and target is None:
+        target = 90
+        action = "setAngle"
+    elif action in ("close", "deactivate") and target is None:
+        target = 0
+        action = "setAngle"
 
-            try:
-                target_int = int(t_raw)
-            except (TypeError, ValueError):
-                return err("targetPosition required/int for setAngle", 400)
-
-            target_int = clamp_deg(target_int)  # Ensure 0-180 degree range
-            payload = {"action": "setAngle", "targetPosition": target_int}
-
-        command = enqueue_command(device_id, payload)
-        return jsonify({"status": "ok", **command, "note": "Command published via MQTT to tongsampahbinladen/command/{deviceId}"})
-
-    # GET: Device polling for new commands (backward compatibility)
-    device_id = arg_str("deviceId")
-    if not device_id:
-        # Auto-select first available device if none specified
-        if not device_data:
-            return jsonify({})
-        device_id = next(iter(device_data.keys()))
-    last_id = arg_int("lastId", 0)
-    cmd = device_commands.get(device_id)
-    if not cmd:
-        return jsonify({})
-    # Extract command ID for comparison
-    raw_cid = cmd.get("commandId", 0)
-    if isinstance(raw_cid, (int, float, str, bool)):
-        cmd_id_val = int(raw_cid)
+    # Build command payload based on action type
+    if action == "auto":
+        payload: dict[str, JSONLike] = {"action": "auto"}
+    elif action == "notify":
+        payload = {"action": "notify"}
     else:
-        cmd_id_val = 0
-    # Only return command if it's newer than what device last received
-    if cmd_id_val <= last_id:
-        return jsonify({})
-    return jsonify(cmd)
+        # Default to setAngle with position validation
+        t_raw = target
+        if t_raw is None or not isinstance(t_raw, (int, float, str, bool)):
+            return jsonify(
+                {"error": "targetPosition required/int for setAngle"}
+            ), 400
+
+        try:
+            target_int = int(t_raw)
+        except (TypeError, ValueError):
+            return err("targetPosition required/int for setAngle", 400)
+
+        target_int = clamp_deg(target_int)  # Ensure 0-180 degree range
+        payload = {"action": "setAngle", "targetPosition": target_int}
+
+    command = enqueue_command(device_id, payload)
+    return jsonify(
+        {
+            "status": "ok",
+            **command,
+            "note": "Command published via MQTT to tongsampahbinladen/command/{deviceId}",
+        }
+    )
 
 
 @app.route("/api/history")
@@ -930,8 +897,6 @@ def settings_api():
 
 P = ParamSpec("P")
 R = TypeVar("R")
-SITE_AUTH_USER = os.getenv("SITE_AUTH_USER", "trash")
-SITE_AUTH_PASS = os.getenv("SITE_AUTH_PASS", "trash_123")
 
 
 def auth_resp() -> Response:
@@ -992,18 +957,18 @@ def health_api():
 
 def run() -> None:
     global mqtt_client
-    
+
     # Initialize and connect MQTT client
     print("Initializing MQTT client...")
     mqtt_client = setup_mqtt()
-    
+
     try:
         mqtt_client.connect(MQTT_BROKER, MQTT_PORT, 60)
         mqtt_client.loop_start()  # Start MQTT network loop in background thread
         print(f"MQTT client connecting to {MQTT_BROKER}:{MQTT_PORT}...")
     except Exception as e:
         print(f"Failed to connect MQTT client: {e}")
-    
+
     # Load model at startup (if exists)
     load_time_prediction_model()
 
