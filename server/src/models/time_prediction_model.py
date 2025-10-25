@@ -169,8 +169,8 @@ def get_model_info() -> dict:
         "data_points": model_data_points,
         "start_time": model_start_time.isoformat() if model_start_time else None,
         "last_reading_time": model_last_reading_time.isoformat() if model_last_reading_time else None,
-        "last_distance": model_last_distance,
+        "last_distance": float(model_last_distance ) if model_last_distance is not None else None,
         "slope": float(time_prediction_model.coef_[0]),
         "intercept": float(time_prediction_model.intercept_),
-        "filling": time_prediction_model.coef_[0] < 0
+        "filling": True if time_prediction_model.coef_[0] < 0 else False
     }
