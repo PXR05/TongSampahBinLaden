@@ -18,7 +18,6 @@ from flask import Flask, jsonify, render_template, request, Response
 from .models.fuzzy_model import compute_fullness
 from .models.regression_model import predict_fullness, train_regression_model
 from .models.time_prediction_model import train_fullness_prediction_model, predict_time_to_full
-import joblib
 from threading import Thread
 import time as _time
 from .utils import (
@@ -707,6 +706,8 @@ def model_info_api():
     from .models.time_prediction_model import get_model_info
     
     time_model_info = get_model_info()
+
+    print(time_model_info)
     
     return jsonify({
         "time_prediction_model": time_model_info,

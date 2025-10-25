@@ -4,7 +4,7 @@ import pandas as pd
 from sklearn.linear_model import LinearRegression
 import os
 from datetime import datetime
-from typing import Optional, Tuple
+from typing import Optional
 
 # Global variables for the model
 time_prediction_model: Optional[LinearRegression] = None
@@ -138,11 +138,13 @@ def predict_time_to_full(full_threshold_cm: float = 5.0) -> Optional[float]:
         time_remaining_seconds = time_to_full_seconds - time_elapsed_at_last_reading
         
         if time_remaining_seconds < 0:
+            print("WOOO")
             return 0.0  # Already past the full threshold
         
         # Convert to hours
         hours = time_remaining_seconds / 3600.0
         
+        print(f"WEEE {hours}")
         return max(0.0, hours)  # Ensure non-negative
         
     except Exception as e:
